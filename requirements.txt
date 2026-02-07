@@ -1,1 +1,2 @@
+# Claude Agent SDK - requires Python >=3.10
 claude-agent-sdk>=0.1.0

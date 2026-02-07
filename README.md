@@ -4,26 +4,113 @@ A minimal harness demonstrating long-running autonomous coding with the Claude A
 
 ## Prerequisites
 
-**Required:** Install the latest versions of both Claude Code and the Claude Agent SDK:
+### System Requirements
+
+Verify you have the required versions:
 
 ```bash
-# Install Claude Code CLI (latest version required)
-npm install -g @anthropic-ai/claude-code
+# Python 3.10 or higher (required by claude-agent-sdk)
+python3 --version
 
-# Install Python dependencies
+# Node.js and npm (required for Puppeteer MCP server)
+node --version
+npm --version
+```
+
+If you need to install these:
+
+- **Python:** Download from [python.org](https://www.python.org/downloads/) (3.10+)
+- **Node.js:** Download from [nodejs.org](https://nodejs.org/) (includes npm)
+
+### Installation
+
+**Step 1:** Install Claude Code CLI (latest version required)
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+Verify installation:
+
+```bash
+claude --version  # Should be latest version
+```
+
+**Step 2:** Install Python dependencies using one of these methods:
+
+#### Method 1: Using uv (Recommended - Fast and Modern)
+
+```bash
+# Install uv if you don't have it
+pip install uv
+
+# Create virtual environment and install dependencies
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+Verify installation:
+
+```bash
+pip show claude-agent-sdk  # Check SDK is installed
+```
+
+#### Method 2: Using venv (Standard Python Virtual Environment)
+
+```bash
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-Verify your installations:
+Verify installation:
+
 ```bash
-claude --version  # Should be latest version
-pip show claude-code-sdk  # Check SDK is installed
+pip show claude-agent-sdk  # Check SDK is installed
 ```
 
-**API Key:** Set your Anthropic API key:
+#### Method 3: Using pip (Simple but Not Recommended)
+
 ```bash
-export ANTHROPIC_API_KEY='your-api-key-here'
+# Install directly (not recommended - use virtual environment instead)
+pip install -r requirements.txt
 ```
+
+**Warning:** Installing without a virtual environment can cause dependency conflicts. Use Method 1 or 2 instead.
+
+### API Key Configuration
+
+Set up authentication using **one** of these methods:
+
+**Option 1: API Key** (from [console.anthropic.com](https://console.anthropic.com))
+
+```bash
+export ANTHROPIC_API_KEY='sk-ant-api03-...'
+```
+
+**Option 2: OAuth Token** (from Claude Code CLI)
+
+```bash
+claude setup-token
+export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token'
+```
+
+**Option 3: Environment File with 1Password** (most secure)
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env and add your credentials (supports 1Password references)
+# Then load it:
+source .env
+```
+
+For automated loading, consider using [direnv](https://direnv.net/).
 
 ## Quick Start
 
@@ -32,6 +119,7 @@ python autonomous_agent_demo.py --project-dir ./my_project
 ```
 
 For testing with limited iterations:
+
 ```bash
 python autonomous_agent_demo.py --project-dir ./my_project --max-iterations 3
 ```
@@ -127,11 +215,11 @@ The application will typically be available at `http://localhost:3000` or simila
 
 ## Command Line Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--project-dir` | Directory for the project | `./autonomous_demo_project` |
-| `--max-iterations` | Max agent iterations | Unlimited |
-| `--model` | Claude model to use | `claude-sonnet-4-5-20250929` |
+| Option             | Description               | Default                      |
+| ------------------ | ------------------------- | ---------------------------- |
+| `--project-dir`    | Directory for the project | `./autonomous_demo_project`  |
+| `--max-iterations` | Max agent iterations      | Unlimited                    |
+| `--model`          | Claude model to use       | `claude-sonnet-4-5-20250929` |
 
 ## Customization
 
@@ -157,6 +245,20 @@ The agent tried to run a command not in the allowlist. This is the security syst
 
 **"API key not set"**
 Ensure `ANTHROPIC_API_KEY` is exported in your shell environment.
+
+**"Python version too old"**
+The claude-agent-sdk requires Python 3.10 or higher. Check your version with `python3 --version`. If needed, install a newer Python version from [python.org](https://www.python.org/downloads/).
+
+**"ModuleNotFoundError: No module named 'claude_agent_sdk'"**
+This usually means you forgot to activate your virtual environment or install dependencies. Run:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+**"Node.js or npm not found"**
+The Puppeteer MCP server requires Node.js and npm. Install from [nodejs.org](https://nodejs.org/) and verify with `node --version` and `npm --version`.
 
 ## License
 

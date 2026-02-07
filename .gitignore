@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Lock file
+uv.lock
+
 # Distribution / packaging
 build/
 dist/
@@ -37,3 +40,7 @@ htmlcov/
 # Project-specific
 generations/
 logs/
+
+# Agent harness runtime state and logs
+.agent-harness/.claude_settings.json
+.agent-harness/logs/

@@ -1,0 +1,184 @@
+"""
+Verification Tests
+==================
+
+Tests for each verification check with mocked environment.
+"""
+
+import os
+import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+
+from agent_harness.config import HarnessConfig, McpServerConfig, ToolsConfig, InitFileConfig
+from agent_harness.verify import (
+    check_authentication,
+    check_claude_cli,
+    check_config_exists,
+    check_config_valid,
+    check_file_references,
+    check_mcp_commands,
+    check_project_dir,
+    check_python_version,
+    run_verify,
+)
+
+
+class TestCheckPythonVersion(unittest.TestCase):
+    def test_current_version_passes(self) -> None:
+        result = check_python_version()
+        self.assertEqual(result.status, "PASS")
+
+    @patch("agent_harness.verify.sys")
+    def test_old_version_fails(self, mock_sys: unittest.mock.MagicMock) -> None:
+        mock_sys.version_info = (3, 9, 0)
+        result = check_python_version()
+        self.assertEqual(result.status, "FAIL")
+
+
+class TestCheckAuthentication(unittest.TestCase):
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test"}, clear=False)
+    def test_api_key_passes(self) -> None:
+        result = check_authentication()
+        self.assertEqual(result.status, "PASS")
+
+    @patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "token"}, clear=False)
+    def test_oauth_token_passes(self) -> None:
+        result = check_authentication()
+        self.assertEqual(result.status, "PASS")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_no_auth_fails(self) -> None:
+        result = check_authentication()
+        self.assertEqual(result.status, "FAIL")
+
+
+class TestCheckClaudeCli(unittest.TestCase):
+    @patch("agent_harness.verify.shutil.which", return_value=None)
+    def test_not_found_fails(self, mock_which: unittest.mock.MagicMock) -> None:
+        result = check_claude_cli()
+        self.assertEqual(result.status, "FAIL")
+
+
+class TestCheckConfigExists(unittest.TestCase):
+    def test_exists(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            harness_dir = Path(tmpdir) / ".agent-harness"
+            harness_dir.mkdir()
+            (harness_dir / "config.toml").write_text("")
+            result = check_config_exists(harness_dir)
+            self.assertEqual(result.status, "PASS")
+
+    def test_missing(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            result = check_config_exists(Path(tmpdir) / ".agent-harness")
+            self.assertEqual(result.status, "FAIL")
+
+
+class TestCheckConfigValid(unittest.TestCase):
+    def test_valid_config(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            (config_dir / "config.toml").write_text("")
+            result, config = check_config_valid(Path(tmpdir))
+            self.assertEqual(result.status, "PASS")
+            self.assertIsNotNone(config)
+
+    def test_invalid_config(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            (config_dir / "config.toml").write_text("invalid [[[")
+            result, config = check_config_valid(Path(tmpdir))
+            self.assertEqual(result.status, "FAIL")
+            self.assertIsNone(config)
+
+
+class TestCheckFileReferences(unittest.TestCase):
+    def test_no_init_files(self) -> None:
+        config = HarnessConfig(harness_dir=Path("/tmp"))
+        result = check_file_references(config)
+        self.assertEqual(result.status, "PASS")
+
+    def test_missing_init_file_source(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            config = HarnessConfig(
+                harness_dir=config_dir,
+                init_files=[InitFileConfig(source="missing.txt", dest="out.txt")],
+            )
+            result = check_file_references(config)
+            self.assertEqual(result.status, "FAIL")
+
+    def test_existing_init_file_source(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            (config_dir / "spec.txt").write_text("content")
+            config = HarnessConfig(
+                harness_dir=config_dir,
+                init_files=[InitFileConfig(source="spec.txt", dest="out.txt")],
+            )
+            result = check_file_references(config)
+            self.assertEqual(result.status, "PASS")
+
+
+class TestCheckMcpCommands(unittest.TestCase):
+    def test_no_servers(self) -> None:
+        config = HarnessConfig()
+        result = check_mcp_commands(config)
+        self.assertEqual(result.status, "PASS")
+
+    @patch("agent_harness.verify.shutil.which", return_value=None)
+    def test_missing_command_warns(self, mock_which: unittest.mock.MagicMock) -> None:
+        config = HarnessConfig(
+            tools=ToolsConfig(
+                mcp_servers={
+                    "test": McpServerConfig(command="nonexistent-cmd", args=[])
+                }
+            )
+        )
+        result = check_mcp_commands(config)
+        self.assertEqual(result.status, "WARN")
+
+    @patch("agent_harness.verify.shutil.which", return_value="/usr/bin/npx")
+    def test_found_command_passes(self, mock_which: unittest.mock.MagicMock) -> None:
+        config = HarnessConfig(
+            tools=ToolsConfig(
+                mcp_servers={
+                    "puppeteer": McpServerConfig(command="npx", args=[])
+                }
+            )
+        )
+        result = check_mcp_commands(config)
+        self.assertEqual(result.status, "PASS")
+
+
+class TestCheckProjectDir(unittest.TestCase):
+    def test_existing_writable(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            result = check_project_dir(Path(tmpdir))
+            self.assertEqual(result.status, "PASS")
+
+    def test_nonexistent_with_writable_parent(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            result = check_project_dir(Path(tmpdir) / "new_dir")
+            self.assertEqual(result.status, "PASS")
+
+
+class TestRunVerify(unittest.TestCase):
+    def test_full_verify_with_valid_config(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            (config_dir / "config.toml").write_text("")
+            results = run_verify(Path(tmpdir))
+            # Should have at least the basic checks
+            self.assertGreater(len(results), 4)
+
+
+if __name__ == "__main__":
+    unittest.main()

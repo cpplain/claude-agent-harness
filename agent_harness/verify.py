@@ -1,0 +1,229 @@
+"""
+Setup Verification
+==================
+
+Checks that the environment and configuration are ready to run.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Optional
+
+from agent_harness.config import (
+    CONFIG_DIR_NAME,
+    CONFIG_FILE_NAME,
+    ConfigError,
+    HarnessConfig,
+    load_config,
+    resolve_file_reference,
+)
+
+
+class CheckResult:
+    """Result of a single verification check."""
+
+    def __init__(self, name: str, status: str, message: str = "") -> None:
+        self.name = name
+        self.status = status  # "PASS", "WARN", "FAIL"
+        self.message = message
+
+    def __str__(self) -> str:
+        prefix = f"[{self.status}]"
+        line = f"  {prefix:8s} {self.name}"
+        if self.message:
+            line += f" - {self.message}"
+        return line
+
+
+def check_python_version() -> CheckResult:
+    """Check Python version >= 3.10."""
+    version = sys.version_info
+    version_str = f"{version[0]}.{version[1]}.{version[2]}"
+    if version >= (3, 10):
+        return CheckResult("Python version", "PASS", version_str)
+    return CheckResult(
+        "Python version", "FAIL", f"Requires >= 3.10, got {version_str}"
+    )
+
+
+def check_authentication() -> CheckResult:
+    """Check for API key or OAuth token."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return CheckResult("Authentication", "PASS", "ANTHROPIC_API_KEY set")
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return CheckResult("Authentication", "PASS", "CLAUDE_CODE_OAUTH_TOKEN set")
+    return CheckResult(
+        "Authentication",
+        "FAIL",
+        "Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN",
+    )
+
+
+def check_claude_cli() -> CheckResult:
+    """Check that claude CLI is available."""
+    claude_path = shutil.which("claude")
+    if claude_path:
+        try:
+            result = subprocess.run(
+                ["claude", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            version = result.stdout.strip() or result.stderr.strip()
+            return CheckResult("Claude CLI", "PASS", version)
+        except (subprocess.TimeoutExpired, OSError):
+            return CheckResult("Claude CLI", "WARN", "Found but could not get version")
+    return CheckResult("Claude CLI", "FAIL", "claude not found on PATH")
+
+
+def check_config_exists(harness_dir: Path) -> CheckResult:
+    """Check that config.toml exists."""
+    config_file = harness_dir / CONFIG_FILE_NAME
+    if config_file.exists():
+        return CheckResult("Config file", "PASS", str(config_file))
+    return CheckResult("Config file", "FAIL", f"Not found: {config_file}")
+
+
+def check_config_valid(project_dir: Path, harness_dir: Optional[Path] = None) -> tuple[CheckResult, Optional[HarnessConfig]]:
+    """Check that config loads and validates."""
+    try:
+        config = load_config(project_dir, harness_dir)
+        return CheckResult("Config validation", "PASS"), config
+    except ConfigError as e:
+        return CheckResult("Config validation", "FAIL", str(e)), None
+
+
+def check_file_references(config: HarnessConfig) -> CheckResult:
+    """Check that all file: references point to existing files."""
+    missing = []
+
+    # Check system_prompt (already resolved by load_config, but we check the raw TOML)
+    # Since load_config already resolved them, if we got here they're valid.
+    # But we can check init_files sources
+    for init_file in config.init_files:
+        source = config.harness_dir / init_file.source
+        if not source.exists():
+            missing.append(str(source))
+
+    if missing:
+        return CheckResult(
+            "File references",
+            "FAIL",
+            f"Missing: {', '.join(missing)}",
+        )
+    return CheckResult("File references", "PASS")
+
+
+def check_mcp_commands(config: HarnessConfig) -> CheckResult:
+    """Check that MCP server commands are available on PATH."""
+    if not config.tools.mcp_servers:
+        return CheckResult("MCP servers", "PASS", "None configured")
+
+    missing = []
+    for name, server in config.tools.mcp_servers.items():
+        if not shutil.which(server.command):
+            missing.append(f"{name} ({server.command})")
+
+    if missing:
+        return CheckResult(
+            "MCP servers",
+            "WARN",
+            f"Commands not found: {', '.join(missing)}",
+        )
+    return CheckResult(
+        "MCP servers",
+        "PASS",
+        ", ".join(config.tools.mcp_servers.keys()),
+    )
+
+
+def check_project_dir(project_dir: Path) -> CheckResult:
+    """Check that project directory is writable."""
+    if project_dir.exists():
+        if os.access(project_dir, os.W_OK):
+            return CheckResult("Project directory", "PASS", str(project_dir))
+        return CheckResult(
+            "Project directory", "FAIL", f"Not writable: {project_dir}"
+        )
+    # Directory doesn't exist yet — check parent
+    parent = project_dir.parent
+    if parent.exists() and os.access(parent, os.W_OK):
+        return CheckResult(
+            "Project directory", "PASS", f"Will be created: {project_dir}"
+        )
+    return CheckResult(
+        "Project directory",
+        "FAIL",
+        f"Parent not writable: {parent}",
+    )
+
+
+def run_verify(project_dir: Path, harness_dir: Optional[Path] = None) -> list[CheckResult]:
+    """Run all verification checks.
+
+    All checks run regardless of failures.
+
+    Args:
+        project_dir: Agent's working directory
+        harness_dir: Path to .agent-harness/ directory (defaults to project_dir/.agent-harness/)
+
+    Returns:
+        List of CheckResults
+    """
+    if harness_dir is None:
+        harness_dir = project_dir / CONFIG_DIR_NAME
+
+    results: list[CheckResult] = []
+
+    # Independent checks
+    results.append(check_python_version())
+    results.append(check_authentication())
+    results.append(check_claude_cli())
+    results.append(check_config_exists(harness_dir))
+
+    # Config-dependent checks
+    config_result, config = check_config_valid(project_dir, harness_dir)
+    results.append(config_result)
+
+    if config is not None:
+        results.append(check_file_references(config))
+        results.append(check_mcp_commands(config))
+        results.append(check_project_dir(project_dir))
+
+    return results
+
+
+def print_verify_results(results: list[CheckResult]) -> bool:
+    """Print verification results and return True if all passed.
+
+    Returns:
+        True if no FAIL results
+    """
+    print("\nVerification Results:")
+    print("-" * 50)
+
+    for result in results:
+        print(result)
+
+    print("-" * 50)
+
+    fails = sum(1 for r in results if r.status == "FAIL")
+    warns = sum(1 for r in results if r.status == "WARN")
+    passes = sum(1 for r in results if r.status == "PASS")
+
+    print(f"\n  {passes} passed, {warns} warnings, {fails} failed")
+
+    if fails > 0:
+        print("\n  Fix the FAIL items above before running the agent.")
+        return False
+
+    if warns > 0:
+        print("\n  Warnings are non-blocking but may cause issues.")
+
+    return True

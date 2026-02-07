@@ -1,265 +1,205 @@
-# Autonomous Coding Agent Demo
+# Agent Harness
 
-A minimal harness demonstrating long-running autonomous coding with the Claude Agent SDK. This demo implements a two-agent pattern (initializer + coding agent) that can build complete applications over multiple sessions.
+A generic, configurable harness for long-running autonomous coding agents. Built on the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk), it supports any project type (frontend, backend, CLI tools, data pipelines, etc.) when configured via a `.agent-harness/` directory.
+
+## Overview
+
+Agent Harness provides:
+
+- **Configurable agent loop** with phase-based workflows (e.g., initializer + coding agent)
+- **TOML-based configuration** — no code changes needed to customize behavior
+- **Configurable security** — bash command allowlists, sandboxing, filesystem restrictions
+- **Progress tracking** — JSON checklist, notes file, or none
+- **MCP server support** — browser automation, databases, etc.
+- **Session persistence** — auto-continue across sessions with state tracking
+- **Setup verification** — check auth, tools, config before running
 
 ## Prerequisites
 
-### System Requirements
+- Python 3.10+
+- [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) (`npm install -g @anthropic-ai/claude-code`)
+- Authentication: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` environment variable
 
-Verify you have the required versions:
-
-```bash
-# Python 3.10 or higher (required by claude-agent-sdk)
-python3 --version
-
-# Node.js and npm (required for Puppeteer MCP server)
-node --version
-npm --version
-```
-
-If you need to install these:
-
-- **Python:** Download from [python.org](https://www.python.org/downloads/) (3.10+)
-- **Node.js:** Download from [nodejs.org](https://nodejs.org/) (includes npm)
-
-### Installation
-
-**Step 1:** Install Claude Code CLI (latest version required)
+## Installation
 
 ```bash
-npm install -g @anthropic-ai/claude-code
+# Clone the repository
+git clone <repo-url>
+cd claude-agent-harness
+
+# Install with uv (recommended)
+uv sync
 ```
 
-Verify installation:
+Or with pip:
 
 ```bash
-claude --version  # Should be latest version
+pip install -e .
 ```
-
-**Step 2:** Install Python dependencies using one of these methods:
-
-#### Method 1: Using uv (Recommended - Fast and Modern)
-
-```bash
-# Install uv if you don't have it
-pip install uv
-
-# Create virtual environment and install dependencies
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
-```
-
-Verify installation:
-
-```bash
-pip show claude-agent-sdk  # Check SDK is installed
-```
-
-#### Method 2: Using venv (Standard Python Virtual Environment)
-
-```bash
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-Verify installation:
-
-```bash
-pip show claude-agent-sdk  # Check SDK is installed
-```
-
-#### Method 3: Using pip (Simple but Not Recommended)
-
-```bash
-# Install directly (not recommended - use virtual environment instead)
-pip install -r requirements.txt
-```
-
-**Warning:** Installing without a virtual environment can cause dependency conflicts. Use Method 1 or 2 instead.
-
-### API Key Configuration
-
-Set up authentication using **one** of these methods:
-
-**Option 1: API Key** (from [console.anthropic.com](https://console.anthropic.com))
-
-```bash
-export ANTHROPIC_API_KEY='sk-ant-api03-...'
-```
-
-**Option 2: OAuth Token** (from Claude Code CLI)
-
-```bash
-claude setup-token
-export CLAUDE_CODE_OAUTH_TOKEN='your-oauth-token'
-```
-
-**Option 3: Environment File with 1Password** (most secure)
-
-```bash
-# Copy the example file
-cp .env.example .env
-
-# Edit .env and add your credentials (supports 1Password references)
-# Then load it:
-source .env
-```
-
-For automated loading, consider using [direnv](https://direnv.net/).
 
 ## Quick Start
 
 ```bash
-python autonomous_agent_demo.py --project-dir ./my_project
+# 1. Create a new project configuration
+uv run python -m agent_harness init --project-dir ./my-project
+
+# 2. Edit the configuration
+#    -> ./my-project/.agent-harness/config.toml
+
+# 3. Verify setup
+uv run python -m agent_harness verify --project-dir ./my-project
+
+# 4. Run the agent
+uv run python -m agent_harness run --project-dir ./my-project
 ```
 
-For testing with limited iterations:
+## CLI Reference
 
-```bash
-python autonomous_agent_demo.py --project-dir ./my_project --max-iterations 3
+```
+uv run python -m agent_harness <command> [options]
 ```
 
-## Important Timing Expectations
+### Commands
 
-> **Warning: This demo takes a long time to run!**
+| Command  | Description                                    |
+| -------- | ---------------------------------------------- |
+| `run`    | Run the agent loop                             |
+| `verify` | Check setup (auth, config, tools)              |
+| `init`   | Scaffold `.agent-harness/` with starter config |
 
-- **First session (initialization):** The agent generates a `feature_list.json` with 200 test cases. This takes several minutes and may appear to hang - this is normal. The agent is writing out all the features.
+### Global Flags
 
-- **Subsequent sessions:** Each coding iteration can take **5-15 minutes** depending on complexity.
+| Flag            | Description                         | Default                       |
+| --------------- | ----------------------------------- | ----------------------------- |
+| `--project-dir` | Agent's working directory           | `.`                           |
+| `--harness-dir` | Path to `.agent-harness/` directory | `project-dir/.agent-harness/` |
 
-- **Full app:** Building all 200 features typically requires **many hours** of total runtime across multiple sessions.
+### Run Flags
 
-**Tip:** The 200 features parameter in the prompts is designed for comprehensive coverage. If you want faster demos, you can modify `prompts/initializer_prompt.md` to reduce the feature count (e.g., 20-50 features for a quicker demo).
+| Flag               | Description             | Default     |
+| ------------------ | ----------------------- | ----------- |
+| `--max-iterations` | Override max iterations | From config |
+| `--model`          | Override model          | From config |
 
-## How It Works
+## Configuration
 
-### Two-Agent Pattern
+Configuration lives in `.agent-harness/config.toml`. See the [example config](examples/claude-ai-clone/.agent-harness/config.toml) for a complete reference.
 
-1. **Initializer Agent (Session 1):** Reads `app_spec.txt`, creates `feature_list.json` with 200 test cases, sets up project structure, and initializes git.
+### Directory Layout
 
-2. **Coding Agent (Sessions 2+):** Picks up where the previous session left off, implements features one by one, and marks them as passing in `feature_list.json`.
+```
+project_dir/
+  .agent-harness/
+    config.toml            # Main configuration (required)
+    session.json           # Session number, completed phases (auto-created)
+    .claude_settings.json  # Generated security settings (auto-created, gitignored)
+    prompts/               # Prompt files (referenced by config)
+    logs/                  # Session logs (auto-created, gitignored)
+```
 
-### Session Management
+### Key Configuration Sections
 
-- Each session runs with a fresh context window
-- Progress is persisted via `feature_list.json` and git commits
-- The agent auto-continues between sessions (3 second delay)
-- Press `Ctrl+C` to pause; run the same command to resume
+```toml
+# Agent model and system prompt
+model = "claude-sonnet-4-5-20250929"
+system_prompt = "file:prompts/system.md"
 
-## Security Model
+# Session settings
+max_turns = 1000
+auto_continue_delay = 3
 
-This demo uses a defense-in-depth security approach (see `security.py` and `client.py`):
+# Tools and MCP servers
+[tools]
+builtin = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
 
-1. **OS-level Sandbox:** Bash commands run in an isolated environment
-2. **Filesystem Restrictions:** File operations restricted to the project directory only
-3. **Bash Allowlist:** Only specific commands are permitted:
-   - File inspection: `ls`, `cat`, `head`, `tail`, `wc`, `grep`
-   - Node.js: `npm`, `node`
-   - Version control: `git`
-   - Process management: `ps`, `lsof`, `sleep`, `pkill` (dev processes only)
+[tools.mcp_servers.puppeteer]
+command = "npx"
+args = ["puppeteer-mcp-server"]
 
-Commands not in the allowlist are blocked by the security hook.
+# Security
+[security]
+permission_mode = "acceptEdits"
+
+[security.bash]
+allowed_commands = ["ls", "cat", "npm", "node", "git"]
+
+# Progress tracking
+[tracking]
+type = "json_checklist"
+file = "feature_list.json"
+
+# Multi-phase workflows
+[[phases]]
+name = "initializer"
+prompt = "file:prompts/initializer.md"
+run_once = true
+condition = "not_exists:.agent-harness/feature_list.json"
+
+[[phases]]
+name = "coding"
+prompt = "file:prompts/coding.md"
+```
+
+### Config Loading Precedence
+
+CLI flags > config.toml values > defaults
+
+### Defaults
+
+| Setting                    | Default Value                           |
+| -------------------------- | --------------------------------------- |
+| `model`                    | `claude-sonnet-4-5-20250929`            |
+| `max_turns`                | `1000`                                  |
+| `auto_continue_delay`      | `3`                                     |
+| `tools.builtin`            | `[Read, Write, Edit, Glob, Grep, Bash]` |
+| `security.permission_mode` | `acceptEdits`                           |
+| `security.sandbox.enabled` | `true`                                  |
+| `tracking.type`            | `none`                                  |
 
 ## Project Structure
 
 ```
-autonomous-coding/
-├── autonomous_agent_demo.py  # Main entry point
-├── agent.py                  # Agent session logic
-├── client.py                 # Claude SDK client configuration
-├── security.py               # Bash command allowlist and validation
-├── progress.py               # Progress tracking utilities
-├── prompts.py                # Prompt loading utilities
-├── prompts/
-│   ├── app_spec.txt          # Application specification
-│   ├── initializer_prompt.md # First session prompt
-│   └── coding_prompt.md      # Continuation session prompt
-└── requirements.txt          # Python dependencies
+agent_harness/          # Python package
+  __init__.py
+  __main__.py           # Entry point
+  cli.py                # Argument parsing, subcommands
+  config.py             # Config loading, validation, HarnessConfig
+  runner.py             # Generic agent loop
+  client_factory.py     # Builds ClaudeSDKClient from config
+  security.py           # Configurable bash security hooks
+  tracking.py           # Progress tracking implementations
+  prompts.py            # Prompt loading with file: resolution
+  verify.py             # Setup verification checks
+  display.py            # Console output formatting
+tests/
+  test_config.py
+  test_security.py
+  test_tracking.py
+  test_prompts.py
+  test_verify.py
+  test_runner.py
+  test_client_factory.py
+examples/
+  claude-ai-clone/      # Complete example configuration
 ```
 
-## Generated Project Structure
+## Examples
 
-After running, your project directory will contain:
-
-```
-my_project/
-├── feature_list.json         # Test cases (source of truth)
-├── app_spec.txt              # Copied specification
-├── init.sh                   # Environment setup script
-├── claude-progress.txt       # Session progress notes
-├── .claude_settings.json     # Security settings
-└── [application files]       # Generated application code
-```
-
-## Running the Generated Application
-
-After the agent completes (or pauses), you can run the generated application:
+See [`examples/claude-ai-clone/`](examples/claude-ai-clone/) for a complete example that recreates the original autonomous coding demo using the generic harness configuration.
 
 ```bash
-cd generations/my_project
-
-# Run the setup script created by the agent
-./init.sh
-
-# Or manually (typical for Node.js apps):
-npm install
-npm run dev
+# Run the Claude.ai clone example
+uv run python -m agent_harness run \
+    --project-dir ./my-clone-output \
+    --harness-dir examples/claude-ai-clone/.agent-harness
 ```
 
-The application will typically be available at `http://localhost:3000` or similar (check the agent's output or `init.sh` for the exact URL).
-
-## Command Line Options
-
-| Option             | Description               | Default                      |
-| ------------------ | ------------------------- | ---------------------------- |
-| `--project-dir`    | Directory for the project | `./autonomous_demo_project`  |
-| `--max-iterations` | Max agent iterations      | Unlimited                    |
-| `--model`          | Claude model to use       | `claude-sonnet-4-5-20250929` |
-
-## Customization
-
-### Changing the Application
-
-Edit `prompts/app_spec.txt` to specify a different application to build.
-
-### Adjusting Feature Count
-
-Edit `prompts/initializer_prompt.md` and change the "200 features" requirement to a smaller number for faster demos.
-
-### Modifying Allowed Commands
-
-Edit `security.py` to add or remove commands from `ALLOWED_COMMANDS`.
-
-## Troubleshooting
-
-**"Appears to hang on first run"**
-This is normal. The initializer agent is generating 200 detailed test cases, which takes significant time. Watch for `[Tool: ...]` output to confirm the agent is working.
-
-**"Command blocked by security hook"**
-The agent tried to run a command not in the allowlist. This is the security system working as intended. If needed, add the command to `ALLOWED_COMMANDS` in `security.py`.
-
-**"API key not set"**
-Ensure `ANTHROPIC_API_KEY` is exported in your shell environment.
-
-**"Python version too old"**
-The claude-agent-sdk requires Python 3.10 or higher. Check your version with `python3 --version`. If needed, install a newer Python version from [python.org](https://www.python.org/downloads/).
-
-**"ModuleNotFoundError: No module named 'claude_agent_sdk'"**
-This usually means you forgot to activate your virtual environment or install dependencies. Run:
+## Running Tests
 
 ```bash
-source .venv/bin/activate
-pip install -r requirements.txt
+uv run python -m unittest discover tests -v
 ```
-
-**"Node.js or npm not found"**
-The Puppeteer MCP server requires Node.js and npm. Install from [nodejs.org](https://nodejs.org/) and verify with `node --version` and `npm --version`.
 
 ## License
 
-Internal Anthropic use.
+MIT License. See [LICENSE](LICENSE).

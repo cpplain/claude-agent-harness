@@ -1,0 +1,14 @@
+[project]
+name = "agent-harness"
+version = "0.1.0"
+description = "A generic, configurable harness for long-running autonomous coding agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "claude-agent-sdk>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

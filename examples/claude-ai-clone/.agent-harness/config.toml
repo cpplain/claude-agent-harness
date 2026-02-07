@@ -1,0 +1,66 @@
+# Claude.ai Clone - Agent Harness Configuration
+# Recreates the original autonomous coding demo using the generic harness.
+
+# --- Agent ---
+model = "claude-sonnet-4-5-20250929"
+system_prompt = "You are an expert full-stack developer building a production-quality web application."
+
+# --- Session ---
+max_turns = 1000
+auto_continue_delay = 3
+
+# --- Tools ---
+[tools]
+builtin = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
+
+[tools.mcp_servers.puppeteer]
+command = "npx"
+args = ["puppeteer-mcp-server"]
+
+# --- Security ---
+[security]
+permission_mode = "acceptEdits"
+allowed_paths = ["./**"]
+
+[security.sandbox]
+enabled = true
+auto_allow_bash_if_sandboxed = true
+
+[security.bash]
+allowed_commands = [
+    "ls", "cat", "head", "tail", "wc", "grep",
+    "cp", "mkdir", "chmod",
+    "pwd",
+    "npm", "node",
+    "git",
+    "ps", "lsof", "sleep", "pkill",
+    "init.sh",
+]
+
+[security.bash.extra_validators.pkill]
+allowed_targets = ["node", "npm", "npx", "vite", "next"]
+
+[security.bash.extra_validators.chmod]
+allowed_modes = ["+x", "u+x", "a+x"]
+
+# --- Progress Tracking ---
+[tracking]
+type = "json_checklist"
+file = "feature_list.json"
+passing_field = "passes"
+
+# --- Phases ---
+[[phases]]
+name = "initializer"
+prompt = "file:prompts/initializer.md"
+run_once = true
+condition = "not_exists:.agent-harness/feature_list.json"
+
+[[phases]]
+name = "coding"
+prompt = "file:prompts/coding.md"
+
+# --- Init Files ---
+[[init_files]]
+source = "prompts/app_spec.txt"
+dest = "app_spec.txt"

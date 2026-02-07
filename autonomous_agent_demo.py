@@ -44,7 +44,8 @@ Examples:
   python autonomous_agent_demo.py --project-dir ./claude_clone
 
 Environment Variables:
-  ANTHROPIC_API_KEY    Your Anthropic API key (required)
+  ANTHROPIC_API_KEY         API key from https://console.anthropic.com/
+  CLAUDE_CODE_OAUTH_TOKEN   OAuth token from 'claude setup-token' (Pro/Max)
         """,
     )
 
@@ -76,12 +77,12 @@ def main() -> None:
     """Main entry point."""
     args = parse_args()
 
-    # Check for API key
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("Error: ANTHROPIC_API_KEY environment variable not set")
-        print("\nGet your API key from: https://console.anthropic.com/")
-        print("\nThen set it:")
-        print("  export ANTHROPIC_API_KEY='your-api-key-here'")
+    # Check for authentication
+    if not os.environ.get("ANTHROPIC_API_KEY") and not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        print("Error: No authentication configured")
+        print("\nSet one of:")
+        print("  export ANTHROPIC_API_KEY='your-api-key'       # From https://console.anthropic.com/")
+        print("  export CLAUDE_CODE_OAUTH_TOKEN='your-token'   # From 'claude setup-token'")
         return
 
     # Automatically place projects in generations/ directory unless already specified

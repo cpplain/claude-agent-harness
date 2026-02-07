@@ -9,8 +9,8 @@ import json
 import os
 from pathlib import Path
 
-from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
-from claude_code_sdk.types import HookMatcher
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+from claude_agent_sdk import HookMatcher
 
 from security import bash_security_hook
 
@@ -55,10 +55,13 @@ def create_client(project_dir: Path, model: str) -> ClaudeSDKClient:
        (see security.py for ALLOWED_COMMANDS)
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
+    oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if not api_key and not oauth_token:
         raise ValueError(
-            "ANTHROPIC_API_KEY environment variable not set.\n"
-            "Get your API key from: https://console.anthropic.com/"
+            "No authentication configured.\n"
+            "Set one of:\n"
+            "  ANTHROPIC_API_KEY  - API key from https://console.anthropic.com/\n"
+            "  CLAUDE_CODE_OAUTH_TOKEN - OAuth token from 'claude setup-token'"
         )
 
     # Create comprehensive security settings
@@ -100,7 +103,7 @@ def create_client(project_dir: Path, model: str) -> ClaudeSDKClient:
     print()
 
     return ClaudeSDKClient(
-        options=ClaudeCodeOptions(
+        options=ClaudeAgentOptions(
             model=model,
             system_prompt="You are an expert full-stack developer building a production-quality web application.",
             allowed_tools=[

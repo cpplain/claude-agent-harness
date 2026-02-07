@@ -9,7 +9,14 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
-from claude_code_sdk import ClaudeSDKClient
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeSDKClient,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    UserMessage,
+)
 
 from client import create_client
 from progress import print_session_header, print_progress_summary
@@ -47,33 +54,26 @@ async def run_agent_session(
         # Collect response text and show tool use
         response_text = ""
         async for msg in client.receive_response():
-            msg_type = type(msg).__name__
-
             # Handle AssistantMessage (text and tool use)
-            if msg_type == "AssistantMessage" and hasattr(msg, "content"):
+            if isinstance(msg, AssistantMessage):
                 for block in msg.content:
-                    block_type = type(block).__name__
-
-                    if block_type == "TextBlock" and hasattr(block, "text"):
+                    if isinstance(block, TextBlock):
                         response_text += block.text
                         print(block.text, end="", flush=True)
-                    elif block_type == "ToolUseBlock" and hasattr(block, "name"):
+                    elif isinstance(block, ToolUseBlock):
                         print(f"\n[Tool: {block.name}]", flush=True)
-                        if hasattr(block, "input"):
-                            input_str = str(block.input)
-                            if len(input_str) > 200:
-                                print(f"   Input: {input_str[:200]}...", flush=True)
-                            else:
-                                print(f"   Input: {input_str}", flush=True)
+                        input_str = str(block.input)
+                        if len(input_str) > 200:
+                            print(f"   Input: {input_str[:200]}...", flush=True)
+                        else:
+                            print(f"   Input: {input_str}", flush=True)
 
             # Handle UserMessage (tool results)
-            elif msg_type == "UserMessage" and hasattr(msg, "content"):
+            elif isinstance(msg, UserMessage) and isinstance(msg.content, list):
                 for block in msg.content:
-                    block_type = type(block).__name__
-
-                    if block_type == "ToolResultBlock":
-                        result_content = getattr(block, "content", "")
-                        is_error = getattr(block, "is_error", False)
+                    if isinstance(block, ToolResultBlock):
+                        result_content = block.content or ""
+                        is_error = block.is_error or False
 
                         # Check if command was blocked by security hook
                         if "blocked" in str(result_content).lower():
@@ -166,6 +166,7 @@ async def run_autonomous_agent(
             prompt = get_coding_prompt()
 
         # Run session with async context manager
+        status = "error"
         async with client:
             status, response = await run_agent_session(client, prompt, project_dir)
 

@@ -6,8 +6,13 @@ Pre-tool-use hooks that validate bash commands for security.
 Uses an allowlist approach - only explicitly permitted commands can run.
 """
 
+from __future__ import annotations
+
 import os
 import shlex
+from typing import Any
+
+from claude_agent_sdk import HookContext, HookInput, HookJSONOutput
 
 
 # Allowed commands for development tasks
@@ -294,24 +299,26 @@ def get_command_for_validation(cmd: str, segments: list[str]) -> str:
     return ""
 
 
-async def bash_security_hook(input_data, tool_use_id=None, context=None):
+async def bash_security_hook(
+    input_data: HookInput,
+    tool_use_id: str | None = None,
+    context: HookContext | None = None,
+) -> HookJSONOutput:
     """
     Pre-tool-use hook that validates bash commands using an allowlist.
 
     Only commands in ALLOWED_COMMANDS are permitted.
 
     Args:
-        input_data: Dict containing tool_name and tool_input
+        input_data: Hook input containing tool_name and tool_input
         tool_use_id: Optional tool use ID
-        context: Optional context
+        context: Optional hook context
 
     Returns:
         Empty dict to allow, or {"decision": "block", "reason": "..."} to block
     """
-    if input_data.get("tool_name") != "Bash":
-        return {}
-
-    command = input_data.get("tool_input", {}).get("command", "")
+    tool_input: dict[str, Any] = input_data.get("tool_input", {})
+    command: str = tool_input.get("command", "")
     if not command:
         return {}
 

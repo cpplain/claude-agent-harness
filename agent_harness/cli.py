@@ -3,7 +3,7 @@ CLI Interface
 =============
 
 Argument parsing and subcommand dispatch for the agent harness.
-Run with: uv run python -m agent_harness <command> [options]
+Run with: python -m agent_harness <command> [options]
 """
 
 from __future__ import annotations

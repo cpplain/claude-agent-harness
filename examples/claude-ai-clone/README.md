@@ -16,16 +16,16 @@ From the repository root:
 
 ```bash
 # Verify setup
-uv run python -m agent_harness verify \
+python -m agent_harness verify \
     --harness-dir examples/claude-ai-clone/.agent-harness
 
 # Run with harness config from example, agent works in ./my-claude-clone
-uv run python -m agent_harness run \
+python -m agent_harness run \
     --project-dir ./my-claude-clone \
     --harness-dir examples/claude-ai-clone/.agent-harness
 
 # Run with iteration limit
-uv run python -m agent_harness run \
+python -m agent_harness run \
     --project-dir ./my-claude-clone \
     --harness-dir examples/claude-ai-clone/.agent-harness \
     --max-iterations 5

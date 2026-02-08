@@ -18,7 +18,25 @@ Agent Harness provides:
 
 - Python 3.10+
 - [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) (`npm install -g @anthropic-ai/claude-code`)
-- Authentication: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` environment variable
+- Authentication — one of:
+  - `ANTHROPIC_API_KEY` ([console.anthropic.com](https://console.anthropic.com/))
+  - `CLAUDE_CODE_OAUTH_TOKEN` (via `claude setup-token`)
+
+See [`.env.example`](.env.example) for all options.
+
+### Using 1Password CLI
+
+If you manage secrets with [1Password CLI](https://developer.1password.com/docs/cli), create a `.env` file with an `op://` reference:
+
+```
+ANTHROPIC_API_KEY="op://Vault/Item/api_key"
+```
+
+Then wrap any command with `op run`:
+
+```bash
+op run --env-file .env -- python -m agent_harness run --project-dir ./my-project
+```
 
 ## Installation
 
@@ -26,12 +44,23 @@ Agent Harness provides:
 # Clone the repository
 git clone <repo-url>
 cd claude-agent-harness
-
-# Install with uv (recommended)
-uv sync
 ```
 
-Or with pip:
+**Using uv (recommended):**
+
+```bash
+uv sync
+source .venv/bin/activate
+```
+
+**Using venv + pip:**
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+```
+
+**Using pip (existing environment):**
 
 ```bash
 pip install -e .
@@ -41,22 +70,22 @@ pip install -e .
 
 ```bash
 # 1. Create a new project configuration
-uv run python -m agent_harness init --project-dir ./my-project
+python -m agent_harness init --project-dir ./my-project
 
 # 2. Edit the configuration
 #    -> ./my-project/.agent-harness/config.toml
 
 # 3. Verify setup
-uv run python -m agent_harness verify --project-dir ./my-project
+python -m agent_harness verify --project-dir ./my-project
 
 # 4. Run the agent
-uv run python -m agent_harness run --project-dir ./my-project
+python -m agent_harness run --project-dir ./my-project
 ```
 
 ## CLI Reference
 
 ```
-uv run python -m agent_harness <command> [options]
+python -m agent_harness <command> [options]
 ```
 
 ### Commands
@@ -189,7 +218,7 @@ See [`examples/claude-ai-clone/`](examples/claude-ai-clone/) for a complete exam
 
 ```bash
 # Run the Claude.ai clone example
-uv run python -m agent_harness run \
+python -m agent_harness run \
     --project-dir ./my-clone-output \
     --harness-dir examples/claude-ai-clone/.agent-harness
 ```
@@ -197,7 +226,7 @@ uv run python -m agent_harness run \
 ## Running Tests
 
 ```bash
-uv run python -m unittest discover tests -v
+python -m unittest discover tests -v
 ```
 
 ## License

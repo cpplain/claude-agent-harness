@@ -64,6 +64,57 @@ def check_authentication() -> CheckResult:
     )
 
 
+def check_api_connectivity() -> CheckResult:
+    """Check that API credentials are valid by sending a test query.
+
+    Only runs if authentication check passed.
+    """
+    import asyncio
+
+    try:
+        from claude_agent_sdk import ClaudeAgentOptions
+        from claude_agent_sdk.client import ClaudeSDKClient
+
+        async def _check() -> str:
+            async with ClaudeSDKClient(
+                options=ClaudeAgentOptions(model="claude-haiku-4-5-20251001"),
+            ) as client:
+                await client.query("Reply with OK")
+                async for msg in client.receive_response():
+                    content = getattr(msg, "content", None)
+                    if content:
+                        return str(content)
+            return ""
+
+        result = asyncio.run(_check())
+        if "ok" in result.lower():
+            return CheckResult("API connectivity", "PASS", "Credentials valid")
+        return CheckResult("API connectivity", "FAIL", "Unexpected API response")
+    except ImportError:
+        return CheckResult(
+            "API connectivity",
+            "WARN",
+            "Skipped (claude-agent-sdk not installed)",
+        )
+    except Exception as e:
+        error_msg = str(e)[:100]
+        return CheckResult("API connectivity", "FAIL", error_msg)
+
+
+def check_sdk_installed() -> CheckResult:
+    """Check that claude-agent-sdk is installed."""
+    try:
+        import claude_agent_sdk
+        version = getattr(claude_agent_sdk, "__version__", "unknown")
+        return CheckResult("Claude Agent SDK", "PASS", f"version {version}")
+    except ImportError:
+        return CheckResult(
+            "Claude Agent SDK",
+            "FAIL",
+            "Not installed. Run: pip install -r requirements.txt",
+        )
+
+
 def check_claude_cli() -> CheckResult:
     """Check that claude CLI is available."""
     claude_path = shutil.which("claude")
@@ -183,8 +234,17 @@ def run_verify(project_dir: Path, harness_dir: Optional[Path] = None) -> list[Ch
 
     # Independent checks
     results.append(check_python_version())
-    results.append(check_authentication())
+    sdk_result = check_sdk_installed()
+    results.append(sdk_result)
     results.append(check_claude_cli())
+
+    auth_result = check_authentication()
+    results.append(auth_result)
+
+    # API connectivity check (only if SDK and auth both passed)
+    if sdk_result.status == "PASS" and auth_result.status == "PASS":
+        results.append(check_api_connectivity())
+
     results.append(check_config_exists(harness_dir))
 
     # Config-dependent checks

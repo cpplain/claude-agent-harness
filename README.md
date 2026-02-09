@@ -282,6 +282,63 @@ python -m agent_harness run \
     --harness-dir examples/claude-ai-clone/.agent-harness
 ```
 
+## Troubleshooting
+
+### "Configuration file not found"
+
+The harness expects a `.agent-harness/config.toml` file in your project directory. If you see this error:
+
+1. Check that you're running from the correct directory
+2. Use `python -m agent_harness init --project-dir ./my-project` to scaffold a new configuration
+3. If using `--harness-dir`, verify the path points to a directory containing `config.toml`
+
+### "Prompt file not found"
+
+Check that all `file:` references in your config.toml point to files relative to the `.agent-harness/` directory. For example:
+
+```toml
+[[phases]]
+system_prompt = "file:prompts/coding_prompt.md"  # Must exist at .agent-harness/prompts/coding_prompt.md
+```
+
+### "Command 'X' is not in the allowed commands list"
+
+The agent tried to run a bash command that's not in your `security.bash.allowed_commands` list. To fix:
+
+1. Add the command to your config.toml:
+   ```toml
+   [security.bash]
+   allowed_commands = ["ls", "cat", "npm", "node", "your-command"]
+   ```
+2. If the command needs extra validation (like `chmod` or `git`), check that validators are configured correctly
+3. For destructive operations, the harness blocks certain git commands by default (clean, reset --hard, etc.)
+
+### "Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set"
+
+You need authentication credentials to use the Claude API:
+
+- **API Key**: Get one from [console.anthropic.com](https://console.anthropic.com/) and set `export ANTHROPIC_API_KEY="your-key"`
+- **OAuth Token**: Run `claude setup-token` and the harness will use `CLAUDE_CODE_OAUTH_TOKEN` automatically
+- See [`.env.example`](.env.example) for setting these via environment file
+
+### Agent is hanging on the first session
+
+The first session (initializer phase) can take 10-20+ minutes for complex projects because it:
+
+- Reads the entire spec
+- Plans the feature breakdown
+- Creates initial project structure
+- Sets up git repository
+- May run initial installs (npm, pip, etc.)
+
+This is expected behavior. Subsequent sessions (coding phase) are typically faster as they focus on individual features.
+
+If a session truly hangs:
+
+1. Check the `.agent-harness/session.json` file for error messages
+2. Look for permission prompts or security blocks in the output
+3. Verify your progress file format matches the configuration (e.g., `feature_list.json` with `"passes": false` fields)
+
 ## Running Tests
 
 ```bash

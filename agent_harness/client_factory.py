@@ -15,7 +15,7 @@ from pathlib import Path
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher
 
 from agent_harness.config import HarnessConfig
-from agent_harness.security import create_bash_security_hook
+from agent_harness.security import create_bash_security_hook, create_mcp_tool_hook
 
 
 def _build_permission_rules(config: HarnessConfig) -> list[str]:
@@ -100,6 +100,18 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+
+    # Validate OAuth token if present
+    if oauth_token:
+        oauth_token = oauth_token.strip()
+        if ' ' in oauth_token or '\n' in oauth_token or '\r' in oauth_token:
+            raise ValueError(
+                "OAuth token appears malformed (contains whitespace).\n"
+                f"Token length: {len(oauth_token)}\n"
+                "Check for copy/paste issues or environment variable corruption.\n"
+                "Set CLAUDE_CODE_OAUTH_TOKEN with a valid token from 'claude setup-token'"
+            )
+
     if not api_key and not oauth_token:
         raise ValueError(
             "No authentication configured.\n"
@@ -107,6 +119,13 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
             "  ANTHROPIC_API_KEY  - API key from https://console.anthropic.com/\n"
             "  CLAUDE_CODE_OAUTH_TOKEN - OAuth token from 'claude setup-token'"
         )
+
+    # Build environment with auth credentials
+    auth_env = {}
+    if api_key:
+        auth_env["ANTHROPIC_API_KEY"] = api_key
+    if oauth_token:
+        auth_env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
 
     # Ensure project directory exists
     config.project_dir.mkdir(parents=True, exist_ok=True)
@@ -116,11 +135,21 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
 
     # Build hooks
     hooks = {}
+    hook_matchers = []
+
+    # Bash security hook
     if config.security.bash is not None:
         hook_fn = create_bash_security_hook(config.security.bash)
-        hooks["PreToolUse"] = [
-            HookMatcher(matcher="Bash", hooks=[hook_fn]),
-        ]
+        hook_matchers.append(HookMatcher(matcher="Bash", hooks=[hook_fn]))
+
+    # MCP tool security hooks
+    if config.security.mcp is not None:
+        for tool_name, restrictions in config.security.mcp.tool_restrictions.items():
+            mcp_hook = create_mcp_tool_hook(tool_name, restrictions)
+            hook_matchers.append(HookMatcher(matcher=tool_name, hooks=[mcp_hook]))
+
+    if hook_matchers:
+        hooks["PreToolUse"] = hook_matchers
 
     # Build MCP servers
     mcp_servers = _build_mcp_servers(config)
@@ -145,6 +174,7 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
         max_turns=config.max_turns,
         cwd=str(config.project_dir.resolve()),
         settings=str(settings_file.resolve()),
+        env=auth_env,
     )
 
     if mcp_servers:

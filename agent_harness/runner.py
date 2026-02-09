@@ -24,7 +24,7 @@ from claude_agent_sdk import (
 
 from agent_harness.config import HarnessConfig, PhaseConfig
 from agent_harness.client_factory import create_client
-from agent_harness.display import print_banner, print_progress, print_session_complete, print_session_header
+from agent_harness.display import print_banner, print_progress, print_final_summary, print_session_header
 from agent_harness.prompts import copy_init_files
 from agent_harness.tracking import create_tracker
 
@@ -202,6 +202,9 @@ async def run_agent(config: HarnessConfig) -> None:
 
     # Main loop
     iteration = 0
+    consecutive_errors = 0
+    last_error_message = ""
+    exit_reason = "MAX ITERATIONS"
 
     while True:
         iteration += 1
@@ -210,6 +213,7 @@ async def run_agent(config: HarnessConfig) -> None:
         # Check max iterations
         if config.max_iterations and iteration > config.max_iterations:
             print(f"\nReached max iterations ({config.max_iterations})")
+            exit_reason = "MAX ITERATIONS"
             break
 
         # Select phase
@@ -222,6 +226,11 @@ async def run_agent(config: HarnessConfig) -> None:
             # No phases — use system prompt directly, prompt is empty
             phase_name = "agent"
             prompt = config.system_prompt
+
+        # Prepend error context if there was an error in the previous session
+        if last_error_message:
+            error_context = f"Note: The previous session encountered an error: {last_error_message}\nPlease continue with your work.\n\n"
+            prompt = error_context + prompt
 
         # Print session header
         print_session_header(state["session_number"], phase_name)
@@ -246,13 +255,42 @@ async def run_agent(config: HarnessConfig) -> None:
 
         # Handle status
         if status == "continue":
+            # Reset error tracking on success
+            consecutive_errors = 0
+            last_error_message = ""
+
             print(f"\nAgent will auto-continue in {config.auto_continue_delay}s...")
             print_progress(tracker)
+
+            # Check for completion
+            if tracker.is_complete():
+                print("\n✓ All items passing! Agent work is complete.")
+                exit_reason = "ALL COMPLETE"
+                break
+
             await asyncio.sleep(config.auto_continue_delay)
         elif status == "error":
-            print("\nSession encountered an error")
-            print("Will retry with a fresh session...")
-            await asyncio.sleep(config.auto_continue_delay)
+            # Track error for recovery
+            consecutive_errors += 1
+            last_error_message = response
+
+            # Calculate backoff delay
+            backoff_delay = min(
+                config.error_recovery.initial_backoff_seconds *
+                (config.error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
+                config.error_recovery.max_backoff_seconds
+            )
+
+            print(f"\nSession encountered an error (attempt {consecutive_errors}/{config.error_recovery.max_consecutive_errors})")
+
+            # Check circuit breaker
+            if consecutive_errors >= config.error_recovery.max_consecutive_errors:
+                print(f"\nReached maximum consecutive errors ({config.error_recovery.max_consecutive_errors})")
+                exit_reason = "TOO MANY ERRORS"
+                break
+
+            print(f"Will retry with a fresh session in {backoff_delay:.1f}s...")
+            await asyncio.sleep(backoff_delay)
 
         # Small delay between sessions
         if config.max_iterations is None or iteration < config.max_iterations:
@@ -260,6 +298,10 @@ async def run_agent(config: HarnessConfig) -> None:
             await asyncio.sleep(1)
 
     # Final summary
-    print_session_complete(str(config.project_dir))
-    print_progress(tracker)
+    print_final_summary(
+        exit_reason=exit_reason,
+        output_dir=str(config.project_dir),
+        tracker=tracker,
+        post_run_instructions=config.post_run_instructions,
+    )
     print("\nDone!")

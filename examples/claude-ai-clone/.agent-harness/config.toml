@@ -49,6 +49,14 @@ type = "json_checklist"
 file = "feature_list.json"
 passing_field = "passes"
 
+# --- Error Recovery ---
+# Configures exponential backoff and circuit breaker for error handling
+# [error_recovery]
+# max_consecutive_errors = 5
+# initial_backoff_seconds = 5.0
+# max_backoff_seconds = 120.0
+# backoff_multiplier = 2.0
+
 # --- Phases ---
 [[phases]]
 name = "initializer"
@@ -64,3 +72,10 @@ prompt = "file:prompts/coding.md"
 [[init_files]]
 source = "prompts/app_spec.txt"
 dest = "app_spec.txt"
+
+# --- Post-Run Instructions ---
+# Commands to show after the agent completes
+post_run_instructions = [
+    "npm install",
+    "npm run dev",
+]

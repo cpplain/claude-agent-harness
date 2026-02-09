@@ -238,6 +238,114 @@ class TestSecurity(unittest.TestCase):
         allowed, _ = validate_pkill_command("pkill node", ["python", "java"])
         self.assertFalse(allowed)
 
+    def test_validate_git_allowed(self) -> None:
+        """Test git commands that should be allowed."""
+        from agent_harness.security import validate_git_command
+
+        allowed_cmds = [
+            "git status",
+            "git add .",
+            "git commit -m 'message'",
+            "git diff",
+            "git log",
+            "git branch",
+            "git checkout main",
+            "git checkout -b feature",
+            "git push",
+            "git push origin main",
+            "git pull",
+            "git stash",
+            "git reset HEAD~1",
+            "git reset --soft HEAD~1",
+        ]
+
+        for cmd in allowed_cmds:
+            with self.subTest(cmd=cmd):
+                allowed, _ = validate_git_command(cmd)
+                self.assertTrue(allowed, f"{cmd} should be allowed")
+
+    def test_validate_git_blocked(self) -> None:
+        """Test git commands that should be blocked."""
+        from agent_harness.security import validate_git_command
+
+        blocked_cmds = [
+            ("git clean", "removes untracked files"),
+            ("git clean -f", "removes untracked files"),
+            ("git clean -fd", "removes untracked files"),
+            ("git reset --hard", "discards all changes"),
+            ("git reset --hard HEAD", "discards all changes"),
+            ("git reset --hard origin/main", "discards all changes"),
+            ("git checkout -- file.txt", "discards changes"),
+            ("git checkout -- .", "discards changes"),
+            ("git push --force", "overwrites remote history"),
+            ("git push -f", "overwrites remote history"),
+            ("git push origin main --force", "overwrites remote history"),
+            ("git push origin main -f", "overwrites remote history"),
+        ]
+
+        for cmd, reason_fragment in blocked_cmds:
+            with self.subTest(cmd=cmd):
+                allowed, reason = validate_git_command(cmd)
+                self.assertFalse(allowed, f"{cmd} should be blocked")
+                self.assertIn(reason_fragment, reason.lower())
+
+    def test_strip_balanced_parens(self) -> None:
+        """Test balanced parenthesis stripping."""
+        from agent_harness.security import strip_balanced_parens
+
+        # Balanced parens should be stripped
+        self.assertEqual(strip_balanced_parens("(ls)"), "ls")
+        self.assertEqual(strip_balanced_parens("((ls))"), "ls")
+
+        # Single unbalanced parens (shlex artifacts) should be stripped
+        self.assertEqual(strip_balanced_parens("(git"), "git")
+        self.assertEqual(strip_balanced_parens("status)"), "status")
+
+        # Multiple unbalanced parens should NOT be stripped (security bypass prevention)
+        self.assertEqual(strip_balanced_parens("((rm"), "((rm")
+        self.assertEqual(strip_balanced_parens("rm))"), "rm))")
+
+        # No parens
+        self.assertEqual(strip_balanced_parens("git"), "git")
+
+    def test_create_mcp_tool_hook(self) -> None:
+        """Test MCP tool hook creation and validation."""
+        from agent_harness.security import create_mcp_tool_hook
+
+        # Test blocked patterns
+        hook = create_mcp_tool_hook("test_tool", {"blocked_patterns": [r"rm -rf", r"--force"]})
+
+        # Should allow safe input
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "test_tool",
+            "tool_input": {"command": "safe command"}
+        })))
+        self.assertEqual(result.get("decision", "allow"), "allow")
+
+        # Should block dangerous input
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "test_tool",
+            "tool_input": {"command": "rm -rf /"}
+        })))
+        self.assertEqual(result.get("decision"), "block")
+
+        # Test allowed_args
+        hook = create_mcp_tool_hook("test_tool", {"allowed_args": ["status", "list"]})
+
+        # Should allow whitelisted action
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "test_tool",
+            "tool_input": {"action": "status"}
+        })))
+        self.assertEqual(result.get("decision", "allow"), "allow")
+
+        # Should block non-whitelisted action
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "test_tool",
+            "tool_input": {"action": "delete"}
+        })))
+        self.assertEqual(result.get("decision"), "block")
+
 
 if __name__ == "__main__":
     unittest.main()

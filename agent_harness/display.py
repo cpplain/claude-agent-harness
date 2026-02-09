@@ -44,3 +44,32 @@ def print_session_complete(project_dir: str) -> None:
     print("  SESSION COMPLETE")
     print("=" * 70)
     print(f"\nProject directory: {project_dir}")
+
+
+def print_final_summary(
+    exit_reason: str,
+    output_dir: str,
+    tracker: ProgressTracker,
+    post_run_instructions: list[str],
+) -> None:
+    """Print final summary with exit reason, output directory, progress, and post-run instructions.
+
+    Args:
+        exit_reason: Reason for exiting (e.g., "ALL COMPLETE", "MAX ITERATIONS", "TOO MANY ERRORS")
+        output_dir: Path to the output directory
+        tracker: Progress tracker to display summary
+        post_run_instructions: List of instructions to show the user
+    """
+    print("\n" + "=" * 70)
+    print(f"  {exit_reason}")
+    print("=" * 70)
+    print(f"\nOutput directory: {output_dir}")
+    print_progress(tracker)
+
+    if post_run_instructions:
+        print("\n" + "-" * 70)
+        print("  NEXT STEPS:")
+        print("-" * 70)
+        for instruction in post_run_instructions:
+            print(f"  {instruction}")
+        print("-" * 70)

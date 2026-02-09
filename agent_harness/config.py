@@ -51,6 +51,13 @@ class SandboxConfig:
 
 
 @dataclass
+class McpSecurityConfig:
+    """Configuration for MCP tool restrictions."""
+
+    tool_restrictions: dict[str, dict] = field(default_factory=dict)
+
+
+@dataclass
 class SecurityConfig:
     """Security configuration."""
 
@@ -58,6 +65,7 @@ class SecurityConfig:
     allowed_paths: list[str] = field(default_factory=lambda: ["./**"])
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     bash: Optional[BashSecurityConfig] = None
+    mcp: Optional[McpSecurityConfig] = None
 
 
 @dataclass
@@ -106,6 +114,16 @@ class InitFileConfig:
 
 
 @dataclass
+class ErrorRecoveryConfig:
+    """Configuration for error recovery behavior."""
+
+    max_consecutive_errors: int = 5
+    initial_backoff_seconds: float = 5.0
+    max_backoff_seconds: float = 120.0
+    backoff_multiplier: float = 2.0
+
+
+@dataclass
 class HarnessConfig:
     """Top-level configuration for the agent harness."""
 
@@ -128,11 +146,17 @@ class HarnessConfig:
     # Tracking
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
 
+    # Error Recovery
+    error_recovery: ErrorRecoveryConfig = field(default_factory=ErrorRecoveryConfig)
+
     # Phases
     phases: list[PhaseConfig] = field(default_factory=list)
 
     # Init files
     init_files: list[InitFileConfig] = field(default_factory=list)
+
+    # Post-run instructions
+    post_run_instructions: list[str] = field(default_factory=list)
 
     # Resolved paths (set by load_config, not from TOML)
     project_dir: Path = field(default_factory=lambda: Path("."))
@@ -193,11 +217,18 @@ def _parse_security(data: dict[str, Any]) -> SecurityConfig:
     if "bash" in data:
         bash = _parse_bash_security(data["bash"])
 
+    mcp = None
+    if "mcp" in data:
+        mcp = McpSecurityConfig(
+            tool_restrictions=data["mcp"].get("tool_restrictions", {})
+        )
+
     return SecurityConfig(
         permission_mode=data.get("permission_mode", "acceptEdits"),
         allowed_paths=data.get("allowed_paths", ["./**"]),
         sandbox=sandbox,
         bash=bash,
+        mcp=mcp,
     )
 
 
@@ -224,6 +255,16 @@ def _parse_tracking(data: dict[str, Any]) -> TrackingConfig:
         type=data.get("type", "none"),
         file=data.get("file", ""),
         passing_field=data.get("passing_field", "passes"),
+    )
+
+
+def _parse_error_recovery(data: dict[str, Any]) -> ErrorRecoveryConfig:
+    """Parse error recovery config from TOML data."""
+    return ErrorRecoveryConfig(
+        max_consecutive_errors=data.get("max_consecutive_errors", 5),
+        initial_backoff_seconds=data.get("initial_backoff_seconds", 5.0),
+        max_backoff_seconds=data.get("max_backoff_seconds", 120.0),
+        backoff_multiplier=data.get("backoff_multiplier", 2.0),
     )
 
 
@@ -293,6 +334,16 @@ def _validate_config(config: HarnessConfig) -> list[str]:
     if config.auto_continue_delay < 0:
         errors.append("auto_continue_delay must be non-negative")
 
+    # Validate error recovery settings
+    if config.error_recovery.max_consecutive_errors < 1:
+        errors.append("error_recovery.max_consecutive_errors must be positive")
+    if config.error_recovery.initial_backoff_seconds <= 0:
+        errors.append("error_recovery.initial_backoff_seconds must be positive")
+    if config.error_recovery.max_backoff_seconds < config.error_recovery.initial_backoff_seconds:
+        errors.append("error_recovery.max_backoff_seconds must be >= initial_backoff_seconds")
+    if config.error_recovery.backoff_multiplier <= 1.0:
+        errors.append("error_recovery.backoff_multiplier must be > 1.0")
+
     return errors
 
 
@@ -339,8 +390,10 @@ def load_config(
         tools=_parse_tools(raw.get("tools", {})),
         security=_parse_security(raw.get("security", {})),
         tracking=_parse_tracking(raw.get("tracking", {})),
+        error_recovery=_parse_error_recovery(raw.get("error_recovery", {})),
         phases=[_parse_phase(p) for p in raw.get("phases", [])],
         init_files=[_parse_init_file(f) for f in raw.get("init_files", [])],
+        post_run_instructions=raw.get("post_run_instructions", []),
         project_dir=project_dir,
         harness_dir=harness_dir,
     )

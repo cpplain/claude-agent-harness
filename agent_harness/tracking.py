@@ -26,6 +26,10 @@ class ProgressTracker(Protocol):
         """Return True if the tracking file exists and is valid."""
         ...
 
+    def is_complete(self) -> bool:
+        """Return True when all items are passing and there is at least one item."""
+        ...
+
     def display_summary(self) -> None:
         """Print a progress summary to stdout."""
         ...
@@ -63,6 +67,10 @@ class JsonChecklistTracker:
         except (json.JSONDecodeError, IOError):
             return False
 
+    def is_complete(self) -> bool:
+        passing, total = self.get_summary()
+        return passing == total and total > 0
+
     def display_summary(self) -> None:
         passing, total = self.get_summary()
         if total > 0:
@@ -83,6 +91,9 @@ class NotesFileTracker:
 
     def is_initialized(self) -> bool:
         return self.file_path.exists()
+
+    def is_complete(self) -> bool:
+        return False
 
     def display_summary(self) -> None:
         if self.file_path.exists():
@@ -105,6 +116,9 @@ class NoneTracker:
 
     def is_initialized(self) -> bool:
         return True
+
+    def is_complete(self) -> bool:
+        return False
 
     def display_summary(self) -> None:
         pass

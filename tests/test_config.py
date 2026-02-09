@@ -252,6 +252,22 @@ dest = "app_spec.txt"
             self.assertEqual(config.init_files[0].source, "prompts/app_spec.txt")
             self.assertEqual(config.init_files[0].dest, "app_spec.txt")
 
+    def test_error_recovery_config(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+max_consecutive_errors = 3
+initial_backoff_seconds = 2.0
+max_backoff_seconds = 60.0
+backoff_multiplier = 3.0
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertEqual(config.error_recovery.max_consecutive_errors, 3)
+            self.assertEqual(config.error_recovery.initial_backoff_seconds, 2.0)
+            self.assertEqual(config.error_recovery.max_backoff_seconds, 60.0)
+            self.assertEqual(config.error_recovery.backoff_multiplier, 3.0)
+
 
 class TestConfigValidation(unittest.TestCase):
     """Test configuration validation."""
@@ -336,6 +352,97 @@ dest = "app_spec.txt"
             with self.assertRaises(ConfigError) as ctx:
                 load_config(project_dir)
             self.assertIn("does not exist", str(ctx.exception))
+
+    def test_error_recovery_max_consecutive_errors_negative(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+max_consecutive_errors = -1
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.max_consecutive_errors must be positive", str(ctx.exception))
+
+    def test_error_recovery_max_consecutive_errors_zero(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+max_consecutive_errors = 0
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.max_consecutive_errors must be positive", str(ctx.exception))
+
+    def test_error_recovery_initial_backoff_zero(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+initial_backoff_seconds = 0
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.initial_backoff_seconds must be positive", str(ctx.exception))
+
+    def test_error_recovery_initial_backoff_negative(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+initial_backoff_seconds = -5
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.initial_backoff_seconds must be positive", str(ctx.exception))
+
+    def test_error_recovery_max_backoff_less_than_initial(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+initial_backoff_seconds = 10
+max_backoff_seconds = 5
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.max_backoff_seconds must be >= initial_backoff_seconds", str(ctx.exception))
+
+    def test_error_recovery_max_backoff_equals_initial_accepted(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+initial_backoff_seconds = 10
+max_backoff_seconds = 10
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            # Should load successfully - equal values are allowed
+            config = load_config(project_dir)
+            self.assertEqual(config.error_recovery.initial_backoff_seconds, 10.0)
+            self.assertEqual(config.error_recovery.max_backoff_seconds, 10.0)
+
+    def test_error_recovery_backoff_multiplier_one(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+backoff_multiplier = 1.0
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.backoff_multiplier must be > 1.0", str(ctx.exception))
+
+    def test_error_recovery_backoff_multiplier_below_one(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+backoff_multiplier = 0.5
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.backoff_multiplier must be > 1.0", str(ctx.exception))
 
 
 if __name__ == "__main__":

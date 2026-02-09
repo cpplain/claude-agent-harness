@@ -82,6 +82,35 @@ class TestJsonChecklistTracker(unittest.TestCase):
         tracker = JsonChecklistTracker(Path("/nonexistent/file.json"))
         self.assertFalse(tracker.is_initialized())
 
+    def test_is_complete_all_passing(self) -> None:
+        """Test is_complete when all items pass."""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "features.json"
+            path.write_text('[{"name": "f1", "passes": true}, {"name": "f2", "passes": true}]')
+            tracker = JsonChecklistTracker(path)
+            self.assertTrue(tracker.is_complete())
+
+    def test_is_complete_some_failing(self) -> None:
+        """Test is_complete when some items fail."""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "features.json"
+            path.write_text('[{"name": "f1", "passes": true}, {"name": "f2", "passes": false}]')
+            tracker = JsonChecklistTracker(path)
+            self.assertFalse(tracker.is_complete())
+
+    def test_is_complete_empty_list(self) -> None:
+        """Test is_complete with empty list (should be False)."""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "features.json"
+            path.write_text('[]')
+            tracker = JsonChecklistTracker(path)
+            self.assertFalse(tracker.is_complete())
+
+    def test_is_complete_missing_file(self) -> None:
+        """Test is_complete when file doesn't exist."""
+        tracker = JsonChecklistTracker(Path("/nonexistent"))
+        self.assertFalse(tracker.is_complete())
+
 
 class TestNotesFileTracker(unittest.TestCase):
     """Tests for notes file tracking."""
@@ -101,6 +130,14 @@ class TestNotesFileTracker(unittest.TestCase):
         tracker = NotesFileTracker(Path("/nonexistent"))
         self.assertFalse(tracker.is_initialized())
 
+    def test_is_complete_always_false(self) -> None:
+        """Test that NotesFileTracker.is_complete() always returns False."""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "notes.txt"
+            path.write_text("Some notes")
+            tracker = NotesFileTracker(path)
+            self.assertFalse(tracker.is_complete())
+
 
 class TestNoneTracker(unittest.TestCase):
     """Tests for no-op tracker."""
@@ -112,6 +149,11 @@ class TestNoneTracker(unittest.TestCase):
     def test_is_initialized_always_true(self) -> None:
         tracker = NoneTracker()
         self.assertTrue(tracker.is_initialized())
+
+    def test_is_complete_always_false(self) -> None:
+        """Test that NoneTracker.is_complete() always returns False."""
+        tracker = NoneTracker()
+        self.assertFalse(tracker.is_complete())
 
 
 class TestCreateTracker(unittest.TestCase):

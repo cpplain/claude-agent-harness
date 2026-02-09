@@ -8,9 +8,10 @@ Agent Harness provides:
 
 - **Configurable agent loop** with phase-based workflows (e.g., initializer + coding agent)
 - **TOML-based configuration** — no code changes needed to customize behavior
-- **Configurable security** — bash command allowlists, sandboxing, filesystem restrictions
-- **Progress tracking** — JSON checklist, notes file, or none
-- **MCP server support** — browser automation, databases, etc.
+- **Configurable security** — bash command allowlists, sandboxing, filesystem restrictions, automatic git validation
+- **Progress tracking** — JSON checklist, notes file, or none with automatic completion detection
+- **Error recovery** — exponential backoff and circuit breaker to prevent runaway costs
+- **MCP server support** — browser automation, databases, etc. with optional tool restrictions
 - **Session persistence** — auto-continue across sessions with state tracking
 - **Setup verification** — check auth, tools, config before running
 
@@ -110,6 +111,58 @@ python -m agent_harness <command> [options]
 | `--max-iterations` | Override max iterations | From config |
 | `--model`          | Override model          | From config |
 
+## Safety Features
+
+The harness includes multiple layers of safety for autonomous agent operation:
+
+### Error Recovery & Circuit Breaker
+
+- **Exponential backoff**: Automatically increases delay between retries (5s → 10s → 20s → 40s → 120s)
+- **Circuit breaker**: Stops after 5 consecutive errors (configurable) to prevent runaway API costs
+- **Error context forwarding**: Previous session errors are included in the next session's prompt to help recovery
+
+```toml
+[error_recovery]
+max_consecutive_errors = 5
+initial_backoff_seconds = 5.0
+max_backoff_seconds = 120.0
+backoff_multiplier = 2.0
+```
+
+### Completion Detection
+
+The harness automatically stops when all work is complete:
+
+- For `json_checklist` tracking: stops when all items have `passing_field` set to `true`
+- Exit reason shown in final summary: `"ALL COMPLETE"`, `"MAX ITERATIONS"`, or `"TOO MANY ERRORS"`
+
+### Git Safety
+
+When `git` is in the allowed commands list, destructive operations are automatically blocked:
+
+- ❌ Blocked: `git clean`, `git reset --hard`, `git checkout -- <path>`, `git push --force/-f`
+- ✅ Allowed: `git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`, etc.
+
+No additional configuration needed — git validation happens automatically.
+
+### OAuth Token Validation
+
+The harness validates OAuth tokens before use, checking for:
+
+- Embedded whitespace (spaces, newlines, carriage returns)
+- Copy/paste corruption from clipboard
+- Provides helpful error messages with debugging info
+
+### MCP Tool Restrictions
+
+Optional security restrictions for MCP tools:
+
+```toml
+[security.mcp]
+tool_restrictions.puppeteer.blocked_patterns = [r"rm -rf", r"--force"]
+tool_restrictions.puppeteer.allowed_args = ["status", "list"]
+```
+
 ## Configuration
 
 Configuration lives in `.agent-harness/config.toml`. See the [example config](examples/claude-ai-clone/.agent-harness/config.toml) for a complete reference.
@@ -167,6 +220,12 @@ condition = "not_exists:.agent-harness/feature_list.json"
 [[phases]]
 name = "coding"
 prompt = "file:prompts/coding.md"
+
+# Post-run instructions (shown in final summary)
+post_run_instructions = [
+    "npm install",
+    "npm run dev",
+]
 ```
 
 ### Config Loading Precedence

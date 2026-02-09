@@ -74,6 +74,7 @@ class McpServerConfig:
 
     command: str = ""
     args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -239,6 +240,7 @@ def _parse_tools(data: dict[str, Any]) -> ToolsConfig:
         mcp_servers[name] = McpServerConfig(
             command=server_data.get("command", ""),
             args=server_data.get("args", []),
+            env=server_data.get("env", {}),
         )
 
     return ToolsConfig(

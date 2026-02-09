@@ -445,5 +445,48 @@ backoff_multiplier = 0.5
             self.assertIn("error_recovery.backoff_multiplier must be > 1.0", str(ctx.exception))
 
 
+class TestMcpServerEnv(unittest.TestCase):
+    """Test MCP server env field."""
+
+    def _write_config(self, tmpdir: str, content: str) -> Path:
+        project_dir = Path(tmpdir)
+        config_dir = project_dir / ".agent-harness"
+        config_dir.mkdir()
+        (config_dir / "config.toml").write_text(content)
+        return project_dir
+
+    def test_mcp_server_with_env(self) -> None:
+        """Test that env dict is parsed correctly from TOML."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[tools.mcp_servers.test_server]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-puppeteer"]
+
+[tools.mcp_servers.test_server.env]
+API_KEY = "secret123"
+PORT = "8080"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertIn("test_server", config.tools.mcp_servers)
+            server = config.tools.mcp_servers["test_server"]
+            self.assertEqual(server.env, {"API_KEY": "secret123", "PORT": "8080"})
+
+    def test_mcp_server_without_env_defaults_empty(self) -> None:
+        """Test that missing env defaults to empty dict."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[tools.mcp_servers.test_server]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-puppeteer"]
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertIn("test_server", config.tools.mcp_servers)
+            server = config.tools.mcp_servers["test_server"]
+            self.assertEqual(server.env, {})
+
+
 if __name__ == "__main__":
     unittest.main()

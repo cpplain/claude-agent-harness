@@ -83,6 +83,8 @@ def _build_mcp_servers(config: HarnessConfig) -> dict:
             "command": server_config.command,
             "args": server_config.args,
         }
+        if server_config.env:
+            servers[name]["env"] = server_config.env
     return servers
 
 

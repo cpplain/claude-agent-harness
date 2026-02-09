@@ -148,6 +148,41 @@ class TestBuildMcpServers(unittest.TestCase):
         self.assertEqual(servers["puppeteer"]["command"], "npx")
         self.assertEqual(servers["puppeteer"]["args"], ["puppeteer-mcp-server"])
 
+    def test_server_with_env(self) -> None:
+        """Test that env dict passes through to output."""
+        config = HarnessConfig(
+            tools=ToolsConfig(
+                mcp_servers={
+                    "test_server": McpServerConfig(
+                        command="npx",
+                        args=["test-server"],
+                        env={"API_KEY": "secret", "PORT": "8080"}
+                    )
+                }
+            )
+        )
+        servers = _build_mcp_servers(config)
+        self.assertEqual(servers["test_server"]["command"], "npx")
+        self.assertEqual(servers["test_server"]["args"], ["test-server"])
+        self.assertEqual(servers["test_server"]["env"], {"API_KEY": "secret", "PORT": "8080"})
+
+    def test_server_without_env_omits_key(self) -> None:
+        """Test that empty env produces no 'env' key in output."""
+        config = HarnessConfig(
+            tools=ToolsConfig(
+                mcp_servers={
+                    "test_server": McpServerConfig(
+                        command="npx",
+                        args=["test-server"]
+                    )
+                }
+            )
+        )
+        servers = _build_mcp_servers(config)
+        self.assertEqual(servers["test_server"]["command"], "npx")
+        self.assertEqual(servers["test_server"]["args"], ["test-server"])
+        self.assertNotIn("env", servers["test_server"])
+
 
 class TestCreateClient(unittest.TestCase):
     """Test full client creation."""

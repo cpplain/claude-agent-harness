@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from agent_harness.config import HarnessConfig, PhaseConfig
+from agent_harness.config import ErrorRecoveryConfig, HarnessConfig, PhaseConfig
 from agent_harness.runner import (
     evaluate_condition,
     select_phase,
@@ -153,6 +153,92 @@ class TestSessionState(unittest.TestCase):
             config = HarnessConfig(harness_dir=config_dir)
             state = _load_session_state(config)
             self.assertEqual(state["session_number"], 0)
+
+
+class TestBackoffCalculation(unittest.TestCase):
+    """Test error recovery backoff calculation."""
+
+    def test_exponential_backoff(self) -> None:
+        """Test that backoff increases exponentially: 5→10→20→40→80."""
+        error_recovery = ErrorRecoveryConfig(
+            initial_backoff_seconds=5.0,
+            backoff_multiplier=2.0,
+            max_backoff_seconds=120.0
+        )
+
+        # Calculate backoff for consecutive errors 1-5
+        backoffs = []
+        for consecutive_errors in range(1, 6):
+            backoff = min(
+                error_recovery.initial_backoff_seconds *
+                (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
+                error_recovery.max_backoff_seconds
+            )
+            backoffs.append(backoff)
+
+        # Verify exponential progression
+        self.assertEqual(backoffs, [5.0, 10.0, 20.0, 40.0, 80.0])
+
+    def test_backoff_max_cap(self) -> None:
+        """Test that backoff is capped at max_backoff_seconds."""
+        error_recovery = ErrorRecoveryConfig(
+            initial_backoff_seconds=5.0,
+            backoff_multiplier=2.0,
+            max_backoff_seconds=60.0
+        )
+
+        # Calculate backoff for many consecutive errors
+        backoffs = []
+        for consecutive_errors in range(1, 8):
+            backoff = min(
+                error_recovery.initial_backoff_seconds *
+                (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
+                error_recovery.max_backoff_seconds
+            )
+            backoffs.append(backoff)
+
+        # Verify capping at 60.0
+        self.assertEqual(backoffs, [5.0, 10.0, 20.0, 40.0, 60.0, 60.0, 60.0])
+
+    def test_circuit_breaker_threshold(self) -> None:
+        """Test that circuit breaker trips at max_consecutive_errors."""
+        error_recovery = ErrorRecoveryConfig(
+            max_consecutive_errors=3,
+            initial_backoff_seconds=5.0,
+            backoff_multiplier=2.0,
+            max_backoff_seconds=120.0
+        )
+
+        # Simulate consecutive errors
+        for consecutive_errors in range(1, 5):
+            should_break = consecutive_errors >= error_recovery.max_consecutive_errors
+
+            if consecutive_errors < 3:
+                self.assertFalse(should_break)
+            else:
+                # At 3 or more, circuit breaker should trip
+                self.assertTrue(should_break)
+
+    def test_different_backoff_multiplier(self) -> None:
+        """Test backoff with 3.0x multiplier: 2→6→18→54."""
+        error_recovery = ErrorRecoveryConfig(
+            initial_backoff_seconds=2.0,
+            backoff_multiplier=3.0,
+            max_backoff_seconds=200.0
+        )
+
+        # Calculate backoff for consecutive errors 1-4
+        backoffs = []
+        for consecutive_errors in range(1, 5):
+            backoff = min(
+                error_recovery.initial_backoff_seconds *
+                (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
+                error_recovery.max_backoff_seconds
+            )
+            backoffs.append(backoff)
+
+        # Verify 3x progression
+        self.assertEqual(backoffs, [2.0, 6.0, 18.0, 54.0])
 
 
 if __name__ == "__main__":

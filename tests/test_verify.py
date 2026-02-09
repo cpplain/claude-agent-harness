@@ -156,6 +156,48 @@ class TestCheckMcpCommands(unittest.TestCase):
         result = check_mcp_commands(config)
         self.assertEqual(result.status, "PASS")
 
+    @patch("agent_harness.verify.shutil.which")
+    def test_npx_missing_warns_with_auto_download_message(self, mock_which: unittest.mock.MagicMock) -> None:
+        """Test that missing npx-only gets a specific auto-download message."""
+        # Return None for npx (not found), but this is the only server
+        def which_side_effect(cmd: str) -> None:
+            return None
+        mock_which.side_effect = which_side_effect
+
+        config = HarnessConfig(
+            tools=ToolsConfig(
+                mcp_servers={
+                    "puppeteer": McpServerConfig(command="npx", args=[])
+                }
+            )
+        )
+        result = check_mcp_commands(config)
+        self.assertEqual(result.status, "WARN")
+        self.assertIn("auto-download", result.message)
+        self.assertIn("npx not found", result.message)
+
+    @patch("agent_harness.verify.shutil.which")
+    def test_npx_and_other_missing(self, mock_which: unittest.mock.MagicMock) -> None:
+        """Test that when npx and other commands are missing, other command is mentioned."""
+        # Return None for everything (not found)
+        def which_side_effect(cmd: str) -> None:
+            return None
+        mock_which.side_effect = which_side_effect
+
+        config = HarnessConfig(
+            tools=ToolsConfig(
+                mcp_servers={
+                    "puppeteer": McpServerConfig(command="npx", args=[]),
+                    "other": McpServerConfig(command="other-cmd", args=[])
+                }
+            )
+        )
+        result = check_mcp_commands(config)
+        self.assertEqual(result.status, "WARN")
+        # Should mention "other" command, not just npx
+        self.assertIn("other-cmd", result.message)
+        self.assertIn("Commands not found", result.message)
+
 
 class TestCheckProjectDir(unittest.TestCase):
     def test_existing_writable(self) -> None:

@@ -177,16 +177,30 @@ def check_mcp_commands(config: HarnessConfig) -> CheckResult:
         return CheckResult("MCP servers", "PASS", "None configured")
 
     missing = []
+    missing_npx = False
     for name, server in config.tools.mcp_servers.items():
         if not shutil.which(server.command):
-            missing.append(f"{name} ({server.command})")
+            if server.command == "npx":
+                missing_npx = True
+            else:
+                missing.append(f"{name} ({server.command})")
 
+    # If only npx is missing, warn with specific message
+    if missing_npx and not missing:
+        return CheckResult(
+            "MCP servers",
+            "WARN",
+            "npx not found on PATH (packages will auto-download on first run)",
+        )
+
+    # If other commands are missing, prioritize those in the message
     if missing:
         return CheckResult(
             "MCP servers",
             "WARN",
             f"Commands not found: {', '.join(missing)}",
         )
+
     return CheckResult(
         "MCP servers",
         "PASS",

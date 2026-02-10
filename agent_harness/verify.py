@@ -116,7 +116,8 @@ def check_sdk_installed() -> CheckResult:
 
 
 def check_claude_cli() -> CheckResult:
-    """Check that claude CLI is available."""
+    """Check that claude CLI is available (system PATH or bundled with SDK)."""
+    # First check system PATH
     claude_path = shutil.which("claude")
     if claude_path:
         try:
@@ -127,10 +128,22 @@ def check_claude_cli() -> CheckResult:
                 timeout=10,
             )
             version = result.stdout.strip() or result.stderr.strip()
-            return CheckResult("Claude CLI", "PASS", version)
+            return CheckResult("Claude CLI", "PASS", f"{version} (system)")
         except (subprocess.TimeoutExpired, OSError):
             return CheckResult("Claude CLI", "WARN", "Found but could not get version")
-    return CheckResult("Claude CLI", "FAIL", "claude not found on PATH")
+
+    # If not on PATH, check for bundled CLI in claude-agent-sdk
+    try:
+        import claude_agent_sdk
+        sdk_file = claude_agent_sdk.__file__
+        if sdk_file:
+            bundled_path = Path(sdk_file).parent / "_bundled" / "claude"
+            if bundled_path.exists():
+                return CheckResult("Claude CLI", "PASS", "bundled with SDK")
+    except ImportError:
+        pass
+
+    return CheckResult("Claude CLI", "FAIL", "Not found on PATH or bundled with SDK")
 
 
 def check_config_exists(harness_dir: Path) -> CheckResult:

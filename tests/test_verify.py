@@ -57,8 +57,32 @@ class TestCheckAuthentication(unittest.TestCase):
 class TestCheckClaudeCli(unittest.TestCase):
     @patch("agent_harness.verify.shutil.which", return_value=None)
     def test_not_found_fails(self, mock_which: unittest.mock.MagicMock) -> None:
-        result = check_claude_cli()
-        self.assertEqual(result.status, "FAIL")
+        """Test that when CLI is not on PATH and SDK import fails, check fails."""
+        with patch("builtins.__import__", side_effect=ImportError("No module named 'claude_agent_sdk'")):
+            result = check_claude_cli()
+            self.assertEqual(result.status, "FAIL")
+
+    @patch("agent_harness.verify.shutil.which", return_value=None)
+    def test_bundled_cli_passes(self, mock_which: unittest.mock.MagicMock) -> None:
+        """Test that bundled CLI in SDK is detected when not on PATH."""
+        with patch("agent_harness.verify.Path") as mock_path_class:
+            # Create a mock module with __file__ attribute
+            mock_sdk = unittest.mock.MagicMock()
+            mock_sdk.__file__ = "/path/to/claude_agent_sdk/__init__.py"
+
+            # Mock the bundled path chain: Path(sdk.__file__).parent / "_bundled" / "claude"
+            mock_bundled_path = unittest.mock.MagicMock()
+            mock_bundled_path.exists.return_value = True
+
+            # Setup Path() call chain
+            mock_path_instance = unittest.mock.MagicMock()
+            mock_path_instance.parent.__truediv__.return_value.__truediv__.return_value = mock_bundled_path
+            mock_path_class.return_value = mock_path_instance
+
+            with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
+                result = check_claude_cli()
+                self.assertEqual(result.status, "PASS")
+                self.assertIn("bundled with SDK", result.message)
 
 
 class TestCheckConfigExists(unittest.TestCase):

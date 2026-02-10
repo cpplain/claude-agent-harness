@@ -20,8 +20,9 @@ from agent_harness.config import (
     ConfigError,
     HarnessConfig,
     load_config,
-    resolve_file_reference,
 )
+
+VERIFY_MODEL = "claude-haiku-4-5-20251001"
 
 
 class CheckResult:
@@ -76,26 +77,34 @@ def check_api_connectivity() -> CheckResult:
         from claude_agent_sdk.client import ClaudeSDKClient
 
         async def _check() -> str:
+            text_parts: list[str] = []
             async with ClaudeSDKClient(
-                options=ClaudeAgentOptions(model="claude-haiku-4-5-20251001"),
+                options=ClaudeAgentOptions(model=VERIFY_MODEL),
             ) as client:
-                await client.query("Reply with OK")
+                await client.query("Reply with only the word OK")
                 async for msg in client.receive_response():
                     content = getattr(msg, "content", None)
-                    if content:
-                        return str(content)
-            return ""
+                    if content and isinstance(content, list):
+                        for block in content:
+                            text = getattr(block, "text", None)
+                            if text:
+                                text_parts.append(text)
+                    elif content:
+                        text_parts.append(str(content))
+            return " ".join(text_parts)
 
-        result = asyncio.run(_check())
-        if "ok" in result.lower():
+        result = asyncio.run(asyncio.wait_for(_check(), timeout=30))
+        if result:
             return CheckResult("API connectivity", "PASS", "Credentials valid")
-        return CheckResult("API connectivity", "FAIL", "Unexpected API response")
+        return CheckResult("API connectivity", "FAIL", "No response from API")
     except ImportError:
         return CheckResult(
             "API connectivity",
             "WARN",
             "Skipped (claude-agent-sdk not installed)",
         )
+    except asyncio.TimeoutError:
+        return CheckResult("API connectivity", "FAIL", "Timed out after 30s")
     except Exception as e:
         error_msg = str(e)[:100]
         return CheckResult("API connectivity", "FAIL", error_msg)

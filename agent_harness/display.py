@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from agent_harness.tracking import ProgressTracker
 
+BANNER_WIDTH = 70
+
 
 def print_session_header(session_num: int, phase_name: str) -> None:
     """Print a formatted header for a session."""
-    print("\n" + "=" * 70)
+    print("\n" + "=" * BANNER_WIDTH)
     print(f"  SESSION {session_num}: {phase_name.upper()}")
-    print("=" * 70)
+    print("=" * BANNER_WIDTH)
     print()
 
 
@@ -25,10 +27,16 @@ def print_banner(title: str, config_summary: dict[str, str]) -> None:
         title: Banner title
         config_summary: Key-value pairs to display
     """
-    print("\n" + "=" * 70)
+    print("\n" + "=" * BANNER_WIDTH)
     print(f"  {title}")
-    print("=" * 70)
+    print("=" * BANNER_WIDTH)
     for key, value in config_summary.items():
+        max_val_len = max(0, BANNER_WIDTH - len(key) - 2)
+        if len(value) > max_val_len:
+            if max_val_len <= 3:
+                value = "..."[:max_val_len]
+            else:
+                value = value[: max_val_len - 3] + "..."
         print(f"\n{key}: {value}")
     print()
 
@@ -36,14 +44,6 @@ def print_banner(title: str, config_summary: dict[str, str]) -> None:
 def print_progress(tracker: ProgressTracker) -> None:
     """Print progress from a tracker."""
     tracker.display_summary()
-
-
-def print_session_complete(project_dir: str) -> None:
-    """Print session completion message."""
-    print("\n" + "=" * 70)
-    print("  SESSION COMPLETE")
-    print("=" * 70)
-    print(f"\nProject directory: {project_dir}")
 
 
 def print_final_summary(
@@ -60,16 +60,16 @@ def print_final_summary(
         tracker: Progress tracker to display summary
         post_run_instructions: List of instructions to show the user
     """
-    print("\n" + "=" * 70)
+    print("\n" + "=" * BANNER_WIDTH)
     print(f"  {exit_reason}")
-    print("=" * 70)
+    print("=" * BANNER_WIDTH)
     print(f"\nOutput directory: {output_dir}")
     print_progress(tracker)
 
     if post_run_instructions:
-        print("\n" + "-" * 70)
+        print("\n" + "-" * BANNER_WIDTH)
         print("  NEXT STEPS:")
-        print("-" * 70)
+        print("-" * BANNER_WIDTH)
         for instruction in post_run_instructions:
             print(f"  {instruction}")
-        print("-" * 70)
+        print("-" * BANNER_WIDTH)

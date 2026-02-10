@@ -49,9 +49,11 @@ class JsonChecklistTracker:
         try:
             with open(self.file_path, "r") as f:
                 items = json.load(f)
+            if not isinstance(items, list):
+                return 0, 0
             total = len(items)
             passing = sum(
-                1 for item in items if item.get(self.passing_field, False)
+                1 for item in items if isinstance(item, dict) and item.get(self.passing_field, False)
             )
             return passing, total
         except (json.JSONDecodeError, IOError):
@@ -83,6 +85,8 @@ class JsonChecklistTracker:
 class NotesFileTracker:
     """Tracks progress via a plain text notes file."""
 
+    PREVIEW_LINES = 5
+
     def __init__(self, file_path: Path) -> None:
         self.file_path = file_path
 
@@ -100,8 +104,8 @@ class NotesFileTracker:
             content = self.file_path.read_text().strip()
             # Show first few lines as summary
             lines = content.split("\n")
-            preview = "\n".join(lines[:5])
-            if len(lines) > 5:
+            preview = "\n".join(lines[:self.PREVIEW_LINES])
+            if len(lines) > self.PREVIEW_LINES:
                 preview += f"\n  ... ({len(lines)} lines total)"
             print(f"\nProgress notes:\n{preview}")
         else:

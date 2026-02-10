@@ -5,14 +5,16 @@ Verification Tests
 Tests for each verification check with mocked environment.
 """
 
+import asyncio
 import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from agent_harness.config import HarnessConfig, McpServerConfig, ToolsConfig, InitFileConfig
 from agent_harness.verify import (
+    check_api_connectivity,
     check_authentication,
     check_claude_cli,
     check_config_exists,
@@ -31,7 +33,7 @@ class TestCheckPythonVersion(unittest.TestCase):
         self.assertEqual(result.status, "PASS")
 
     @patch("agent_harness.verify.sys")
-    def test_old_version_fails(self, mock_sys: unittest.mock.MagicMock) -> None:
+    def test_old_version_fails(self, mock_sys: MagicMock) -> None:
         mock_sys.version_info = (3, 9, 0)
         result = check_python_version()
         self.assertEqual(result.status, "FAIL")
@@ -56,26 +58,26 @@ class TestCheckAuthentication(unittest.TestCase):
 
 class TestCheckClaudeCli(unittest.TestCase):
     @patch("agent_harness.verify.shutil.which", return_value=None)
-    def test_not_found_fails(self, mock_which: unittest.mock.MagicMock) -> None:
+    def test_not_found_fails(self, mock_which: MagicMock) -> None:
         """Test that when CLI is not on PATH and SDK import fails, check fails."""
         with patch("builtins.__import__", side_effect=ImportError("No module named 'claude_agent_sdk'")):
             result = check_claude_cli()
             self.assertEqual(result.status, "FAIL")
 
     @patch("agent_harness.verify.shutil.which", return_value=None)
-    def test_bundled_cli_passes(self, mock_which: unittest.mock.MagicMock) -> None:
+    def test_bundled_cli_passes(self, mock_which: MagicMock) -> None:
         """Test that bundled CLI in SDK is detected when not on PATH."""
         with patch("agent_harness.verify.Path") as mock_path_class:
             # Create a mock module with __file__ attribute
-            mock_sdk = unittest.mock.MagicMock()
+            mock_sdk = MagicMock()
             mock_sdk.__file__ = "/path/to/claude_agent_sdk/__init__.py"
 
             # Mock the bundled path chain: Path(sdk.__file__).parent / "_bundled" / "claude"
-            mock_bundled_path = unittest.mock.MagicMock()
+            mock_bundled_path = MagicMock()
             mock_bundled_path.exists.return_value = True
 
             # Setup Path() call chain
-            mock_path_instance = unittest.mock.MagicMock()
+            mock_path_instance = MagicMock()
             mock_path_instance.parent.__truediv__.return_value.__truediv__.return_value = mock_bundled_path
             mock_path_class.return_value = mock_path_instance
 
@@ -157,7 +159,7 @@ class TestCheckMcpCommands(unittest.TestCase):
         self.assertEqual(result.status, "PASS")
 
     @patch("agent_harness.verify.shutil.which", return_value=None)
-    def test_missing_command_warns(self, mock_which: unittest.mock.MagicMock) -> None:
+    def test_missing_command_warns(self, mock_which: MagicMock) -> None:
         config = HarnessConfig(
             tools=ToolsConfig(
                 mcp_servers={
@@ -169,7 +171,7 @@ class TestCheckMcpCommands(unittest.TestCase):
         self.assertEqual(result.status, "WARN")
 
     @patch("agent_harness.verify.shutil.which", return_value="/usr/bin/npx")
-    def test_found_command_passes(self, mock_which: unittest.mock.MagicMock) -> None:
+    def test_found_command_passes(self, mock_which: MagicMock) -> None:
         config = HarnessConfig(
             tools=ToolsConfig(
                 mcp_servers={
@@ -181,7 +183,7 @@ class TestCheckMcpCommands(unittest.TestCase):
         self.assertEqual(result.status, "PASS")
 
     @patch("agent_harness.verify.shutil.which")
-    def test_npx_missing_warns_with_auto_download_message(self, mock_which: unittest.mock.MagicMock) -> None:
+    def test_npx_missing_warns_with_auto_download_message(self, mock_which: MagicMock) -> None:
         """Test that missing npx-only gets a specific auto-download message."""
         # Return None for npx (not found), but this is the only server
         def which_side_effect(cmd: str) -> None:
@@ -201,7 +203,7 @@ class TestCheckMcpCommands(unittest.TestCase):
         self.assertIn("npx not found", result.message)
 
     @patch("agent_harness.verify.shutil.which")
-    def test_npx_and_other_missing(self, mock_which: unittest.mock.MagicMock) -> None:
+    def test_npx_and_other_missing(self, mock_which: MagicMock) -> None:
         """Test that when npx and other commands are missing, other command is mentioned."""
         # Return None for everything (not found)
         def which_side_effect(cmd: str) -> None:
@@ -233,6 +235,23 @@ class TestCheckProjectDir(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             result = check_project_dir(Path(tmpdir) / "new_dir")
             self.assertEqual(result.status, "PASS")
+
+
+class TestCheckApiConnectivity(unittest.TestCase):
+    def test_api_connectivity_timeout(self) -> None:
+        """Verify that a slow API check times out with a FAIL result."""
+        import warnings
+
+        def fake_run(coro):
+            coro.close()
+            raise asyncio.TimeoutError()
+
+        with patch("asyncio.run", side_effect=fake_run), \
+             warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            result = check_api_connectivity()
+            self.assertEqual(result.status, "FAIL")
+            self.assertIn("Timed out", result.message)
 
 
 class TestRunVerify(unittest.TestCase):

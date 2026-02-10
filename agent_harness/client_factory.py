@@ -9,13 +9,18 @@ Generates security settings, installs hooks, configures MCP servers.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher
 
 from agent_harness.config import HarnessConfig
 from agent_harness.security import create_bash_security_hook, create_mcp_tool_hook
+
+SETTINGS_FILE_NAME = ".claude_settings.json"
 
 
 def _build_permission_rules(config: HarnessConfig) -> list[str]:
@@ -55,11 +60,28 @@ def _build_settings(config: HarnessConfig) -> dict:
 
 
 def _write_settings(config: HarnessConfig) -> Path:
-    """Write .claude_settings.json to .agent-harness/ and return the path."""
+    """Write .claude_settings.json to .agent-harness/ and return the path.
+
+    Only writes if the content has changed to avoid unnecessary file writes.
+    """
     settings = _build_settings(config)
-    settings_file = config.harness_dir / ".claude_settings.json"
-    with open(settings_file, "w") as f:
-        json.dump(settings, f, indent=2)
+    settings_file = config.harness_dir / SETTINGS_FILE_NAME
+
+    # Read existing file if it exists
+    new_content = json.dumps(settings, indent=2)
+    existing_content = None
+    if settings_file.exists():
+        try:
+            with open(settings_file, "r") as f:
+                existing_content = f.read()
+        except IOError:
+            # If we can't read it, we'll just write the new content
+            pass
+
+    # Only write if content has changed
+    if existing_content != new_content:
+        with open(settings_file, "w") as f:
+            f.write(new_content)
 
     return settings_file
 
@@ -106,11 +128,19 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
     # Validate OAuth token if present
     if oauth_token:
         oauth_token = oauth_token.strip()
-        if ' ' in oauth_token or '\n' in oauth_token or '\r' in oauth_token:
+        if not oauth_token:
+            # All whitespace — treat as unset
+            oauth_token = None
+        elif ' ' in oauth_token or '\n' in oauth_token or '\r' in oauth_token or '\t' in oauth_token:
             raise ValueError(
                 "OAuth token appears malformed (contains whitespace).\n"
                 f"Token length: {len(oauth_token)}\n"
                 "Check for copy/paste issues or environment variable corruption.\n"
+                "Set CLAUDE_CODE_OAUTH_TOKEN with a valid token from 'claude setup-token'"
+            )
+        elif len(oauth_token) < 20:
+            raise ValueError(
+                "OAuth token appears too short (expected 20+ characters).\n"
                 "Set CLAUDE_CODE_OAUTH_TOKEN with a valid token from 'claude setup-token'"
             )
 
@@ -156,20 +186,22 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
     # Build MCP servers
     mcp_servers = _build_mcp_servers(config)
 
-    # Print setup summary
-    print(f"Settings written to {settings_file}")
+    # Log setup summary
     sandbox_status = "enabled" if config.security.sandbox.enabled else "disabled"
-    print(f"   - Sandbox {sandbox_status}")
-    print(f"   - Working directory: {config.project_dir.resolve()}")
+    logger.info("Settings written to %s", settings_file)
+    logger.info("   - Sandbox %s", sandbox_status)
+    logger.info("   - Working directory: %s", config.project_dir.resolve())
     if config.security.bash is not None:
-        print(f"   - Bash commands restricted to allowlist ({len(config.security.bash.allowed_commands)} commands)")
+        logger.info("   - Bash commands restricted to allowlist (%d commands)", len(config.security.bash.allowed_commands))
     else:
-        print("   - No bash security hook (sandbox handles security)")
+        if config.security.sandbox.enabled:
+            logger.info("   - No bash security hook (sandbox handles security)")
+        else:
+            logger.info("   - No bash security hook (no bash restrictions configured)")
     if mcp_servers:
-        print(f"   - MCP servers: {', '.join(mcp_servers.keys())}")
-    print()
+        logger.info("   - MCP servers: %s", ", ".join(mcp_servers.keys()))
 
-    options_kwargs = dict(
+    options = ClaudeAgentOptions(
         model=config.model,
         system_prompt=config.system_prompt,
         allowed_tools=_build_allowed_tools(config),
@@ -177,12 +209,7 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
         cwd=str(config.project_dir.resolve()),
         settings=str(settings_file.resolve()),
         env=auth_env,
+        mcp_servers=mcp_servers if mcp_servers else {},
+        hooks=hooks if hooks else None,
     )
-
-    if mcp_servers:
-        options_kwargs["mcp_servers"] = mcp_servers
-
-    if hooks:
-        options_kwargs["hooks"] = hooks
-
-    return ClaudeSDKClient(options=ClaudeAgentOptions(**options_kwargs))
+    return ClaudeSDKClient(options=options)

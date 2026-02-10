@@ -5,12 +5,15 @@ Configuration Tests
 Tests for config loading, validation, defaults, and file: resolution.
 """
 
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from agent_harness.config import (
     ConfigError,
+    DEFAULT_BUILTIN_TOOLS,
     HarnessConfig,
     load_config,
     resolve_file_reference,
@@ -34,10 +37,12 @@ class TestConfigDefaults(unittest.TestCase):
 
     def test_default_tools(self) -> None:
         config = HarnessConfig()
-        self.assertEqual(
-            config.tools.builtin,
-            ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
-        )
+        self.assertEqual(config.tools.builtin, DEFAULT_BUILTIN_TOOLS)
+
+    def test_default_tools_equals_constant(self) -> None:
+        """Test that default builtin tools matches the constant."""
+        config = HarnessConfig()
+        self.assertEqual(config.tools.builtin, DEFAULT_BUILTIN_TOOLS)
 
     def test_default_security(self) -> None:
         config = HarnessConfig()
@@ -213,6 +218,7 @@ allowed_targets = ["node", "npm"]
             project_dir = self._write_config(tmpdir, toml_content)
             config = load_config(project_dir)
             self.assertIsNotNone(config.security.bash)
+            assert config.security.bash is not None
             self.assertEqual(config.security.bash.allowed_commands, ["ls", "cat", "npm"])
             self.assertIn("pkill", config.security.bash.extra_validators)
             self.assertEqual(
@@ -345,6 +351,43 @@ dest = "app_spec.txt"
                 load_config(project_dir)
             self.assertIn("init_files[0].source", str(ctx.exception))
 
+    def test_phase_invalid_condition_prefix(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[[phases]]
+name = "init"
+prompt = "Do stuff"
+condition = "unknown:something"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("phases[0].condition must start with", str(ctx.exception))
+
+    def test_phase_valid_condition_prefix_exists(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[[phases]]
+name = "init"
+prompt = "Do stuff"
+condition = "exists:file.txt"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertEqual(config.phases[0].condition, "exists:file.txt")
+
+    def test_phase_valid_condition_prefix_not_exists(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[[phases]]
+name = "init"
+prompt = "Do stuff"
+condition = "not_exists:file.txt"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertEqual(config.phases[0].condition, "not_exists:file.txt")
+
     def test_missing_file_reference(self) -> None:
         with TemporaryDirectory() as tmpdir:
             toml_content = 'system_prompt = "file:missing.md"'
@@ -422,18 +465,28 @@ max_backoff_seconds = 10
             self.assertEqual(config.error_recovery.initial_backoff_seconds, 10.0)
             self.assertEqual(config.error_recovery.max_backoff_seconds, 10.0)
 
-    def test_error_recovery_backoff_multiplier_one(self) -> None:
+    def test_error_recovery_backoff_multiplier_one_accepted(self) -> None:
         with TemporaryDirectory() as tmpdir:
             toml_content = """
 [error_recovery]
 backoff_multiplier = 1.0
 """
             project_dir = self._write_config(tmpdir, toml_content)
-            with self.assertRaises(ConfigError) as ctx:
-                load_config(project_dir)
-            self.assertIn("error_recovery.backoff_multiplier must be > 1.0", str(ctx.exception))
+            config = load_config(project_dir)
+            self.assertEqual(config.error_recovery.backoff_multiplier, 1.0)
 
     def test_error_recovery_backoff_multiplier_below_one(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+backoff_multiplier = 0.99
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.backoff_multiplier must be >= 1.0", str(ctx.exception))
+
+    def test_error_recovery_backoff_multiplier_half(self) -> None:
         with TemporaryDirectory() as tmpdir:
             toml_content = """
 [error_recovery]
@@ -442,7 +495,90 @@ backoff_multiplier = 0.5
             project_dir = self._write_config(tmpdir, toml_content)
             with self.assertRaises(ConfigError) as ctx:
                 load_config(project_dir)
-            self.assertIn("error_recovery.backoff_multiplier must be > 1.0", str(ctx.exception))
+            self.assertIn("error_recovery.backoff_multiplier must be >= 1.0", str(ctx.exception))
+
+    def test_max_iterations_zero_raises(self) -> None:
+        """Test that max_iterations=0 raises validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+max_iterations = 0
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("max_iterations must be positive when set", str(ctx.exception))
+
+    def test_max_iterations_negative_raises(self) -> None:
+        """Test that negative max_iterations raises validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+max_iterations = -5
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("max_iterations must be positive when set", str(ctx.exception))
+
+    def test_max_iterations_positive_accepted(self) -> None:
+        """Test that positive max_iterations is accepted."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+max_iterations = 10
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertEqual(config.max_iterations, 10)
+
+    def test_max_iterations_none_accepted(self) -> None:
+        """Test that max_iterations=None is accepted (unlimited)."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = ""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertIsNone(config.max_iterations)
+
+    def test_duplicate_phase_names_raises(self) -> None:
+        """Test that duplicate phase names raise validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[[phases]]
+name = "setup"
+prompt = "First setup"
+
+[[phases]]
+name = "build"
+prompt = "Build something"
+
+[[phases]]
+name = "setup"
+prompt = "Second setup"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("Duplicate phase name", str(ctx.exception))
+            self.assertIn("setup", str(ctx.exception))
+
+    def test_unique_phase_names_accepted(self) -> None:
+        """Test that unique phase names are accepted."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[[phases]]
+name = "setup"
+prompt = "Setup"
+
+[[phases]]
+name = "build"
+prompt = "Build"
+
+[[phases]]
+name = "deploy"
+prompt = "Deploy"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertEqual(len(config.phases), 3)
+            self.assertEqual([p.name for p in config.phases], ["setup", "build", "deploy"])
 
 
 class TestMcpServerEnv(unittest.TestCase):
@@ -486,6 +622,265 @@ args = ["-y", "@modelcontextprotocol/server-puppeteer"]
             self.assertIn("test_server", config.tools.mcp_servers)
             server = config.tools.mcp_servers["test_server"]
             self.assertEqual(server.env, {})
+
+    @patch.dict(os.environ, {"MY_API_KEY": "expanded_secret", "MY_PORT": "9090"})
+    def test_mcp_server_env_var_expansion(self) -> None:
+        """Test that ${VAR} syntax in env values is expanded."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[tools.mcp_servers.test_server]
+command = "npx"
+args = ["-y", "test-server"]
+
+[tools.mcp_servers.test_server.env]
+API_KEY = "${MY_API_KEY}"
+PORT = "${MY_PORT}"
+STATIC = "no-expansion"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            server = config.tools.mcp_servers["test_server"]
+            self.assertEqual(server.env["API_KEY"], "expanded_secret")
+            self.assertEqual(server.env["PORT"], "9090")
+            self.assertEqual(server.env["STATIC"], "no-expansion")
+
+    def test_mcp_server_env_unset_var_warns(self) -> None:
+        """Test that undefined env vars trigger a warning."""
+        import logging
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[tools.mcp_servers.test_server]
+command = "npx"
+args = []
+
+[tools.mcp_servers.test_server.env]
+MISSING = "${UNLIKELY_TO_EXIST_VAR_12345}"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertLogs("agent_harness.config", level=logging.WARNING) as cm:
+                load_config(project_dir)
+            self.assertTrue(any("undefined variable" in msg for msg in cm.output))
+
+    def test_mcp_server_env_unset_var_preserved(self) -> None:
+        """Test that ${VAR} for unset vars is left as-is by expandvars."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[tools.mcp_servers.test_server]
+command = "npx"
+args = []
+
+[tools.mcp_servers.test_server.env]
+MISSING = "${UNLIKELY_TO_EXIST_VAR_12345}"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            server = config.tools.mcp_servers["test_server"]
+            # os.path.expandvars leaves unset vars as-is
+            self.assertEqual(server.env["MISSING"], "${UNLIKELY_TO_EXIST_VAR_12345}")
+
+    @patch.dict(os.environ, {"EMPTY_VAR": ""})
+    def test_mcp_server_env_empty_expansion_warns(self) -> None:
+        """Test that expansion to empty string triggers a warning."""
+        import logging
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[tools.mcp_servers.test_server]
+command = "npx"
+args = []
+
+[tools.mcp_servers.test_server.env]
+API_KEY = "${EMPTY_VAR}"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertLogs("agent_harness.config", level=logging.WARNING) as cm:
+                config = load_config(project_dir)
+            # Should warn about empty expansion
+            self.assertTrue(any("expanded to empty string" in msg for msg in cm.output))
+            # Should still set the value to empty string
+            server = config.tools.mcp_servers["test_server"]
+            self.assertEqual(server.env["API_KEY"], "")
+
+
+class TestNumericValidation(unittest.TestCase):
+    """Test type-checking for numeric config values (C2)."""
+
+    def _write_config(self, tmpdir: str, content: str) -> Path:
+        project_dir = Path(tmpdir)
+        config_dir = project_dir / ".agent-harness"
+        config_dir.mkdir()
+        (config_dir / "config.toml").write_text(content)
+        return project_dir
+
+    def test_max_turns_string_raises_clear_error(self) -> None:
+        """Test that max_turns = 'string' raises ConfigError, not TypeError."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = 'max_turns = "string"'
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("max_turns must be an integer", str(ctx.exception))
+            self.assertNotIn("TypeError", type(ctx.exception).__name__)
+
+    def test_auto_continue_delay_string_raises_clear_error(self) -> None:
+        """Test that auto_continue_delay = 'string' raises ConfigError."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = 'auto_continue_delay = "5"'
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("auto_continue_delay must be an integer", str(ctx.exception))
+
+    def test_max_iterations_string_raises_clear_error(self) -> None:
+        """Test that max_iterations = 'string' raises ConfigError."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = 'max_iterations = "10"'
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("max_iterations must be an integer", str(ctx.exception))
+
+    def test_error_recovery_max_consecutive_errors_string_raises(self) -> None:
+        """Test that error_recovery.max_consecutive_errors = 'string' raises ConfigError."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+max_consecutive_errors = "5"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.max_consecutive_errors must be an integer", str(ctx.exception))
+
+    def test_error_recovery_initial_backoff_string_raises(self) -> None:
+        """Test that error_recovery.initial_backoff_seconds = 'string' raises ConfigError."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+initial_backoff_seconds = "5.0"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.initial_backoff_seconds must be a number", str(ctx.exception))
+
+    def test_error_recovery_max_backoff_string_raises(self) -> None:
+        """Test that error_recovery.max_backoff_seconds = 'string' raises ConfigError."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+max_backoff_seconds = "120.0"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.max_backoff_seconds must be a number", str(ctx.exception))
+
+    def test_error_recovery_backoff_multiplier_string_raises(self) -> None:
+        """Test that error_recovery.backoff_multiplier = 'string' raises ConfigError."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[error_recovery]
+backoff_multiplier = "2.0"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("error_recovery.backoff_multiplier must be a number", str(ctx.exception))
+
+
+class TestUnknownKeysWarning(unittest.TestCase):
+    """Test warnings for unrecognized config keys (C3)."""
+
+    def _write_config(self, tmpdir: str, content: str) -> Path:
+        project_dir = Path(tmpdir)
+        config_dir = project_dir / ".agent-harness"
+        config_dir.mkdir()
+        (config_dir / "config.toml").write_text(content)
+        return project_dir
+
+    def test_unknown_key_produces_warning(self) -> None:
+        """Test that an unrecognized key like 'modell' produces a warning."""
+        import logging
+        with TemporaryDirectory() as tmpdir:
+            toml_content = 'modell = "claude-opus-4-6"'
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertLogs("agent_harness.config", level=logging.WARNING) as cm:
+                load_config(project_dir)
+            self.assertTrue(any("Unrecognized config key" in msg for msg in cm.output))
+            self.assertTrue(any("modell" in msg for msg in cm.output))
+
+    def test_valid_keys_produce_no_warning(self) -> None:
+        """Test that valid keys do not produce warnings."""
+        import logging
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+model = "claude-opus-4-6"
+max_turns = 500
+auto_continue_delay = 5
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            # Use a custom logger to check no warnings
+            with self.assertRaises(AssertionError):
+                with self.assertLogs("agent_harness.config", level=logging.WARNING):
+                    load_config(project_dir)
+
+
+class TestAdditionalValidation(unittest.TestCase):
+    """Test additional validation gaps (C4)."""
+
+    def _write_config(self, tmpdir: str, content: str) -> Path:
+        project_dir = Path(tmpdir)
+        config_dir = project_dir / ".agent-harness"
+        config_dir.mkdir()
+        (config_dir / "config.toml").write_text(content)
+        return project_dir
+
+    def test_empty_model_raises(self) -> None:
+        """Test that empty model string raises validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = 'model = ""'
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("model must be a non-empty string", str(ctx.exception))
+
+    def test_empty_mcp_command_raises(self) -> None:
+        """Test that empty MCP server command raises validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[tools.mcp_servers.test]
+command = ""
+args = []
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("tools.mcp_servers.test.command must be a non-empty string", str(ctx.exception))
+
+    def test_invalid_builtin_tool_raises(self) -> None:
+        """Test that unknown builtin tool raises validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[tools]
+builtin = ["Read", "Write", "InvalidTool"]
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("Unknown builtin tool", str(ctx.exception))
+            self.assertIn("InvalidTool", str(ctx.exception))
+
+    def test_valid_builtin_tools_accepted(self) -> None:
+        """Test that all valid builtin tools are accepted."""
+        with TemporaryDirectory() as tmpdir:
+            # Test a few valid tools
+            toml_content = """
+[tools]
+builtin = ["Read", "Write", "Edit", "Bash", "LSP", "WebSearch"]
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertEqual(config.tools.builtin, ["Read", "Write", "Edit", "Bash", "LSP", "WebSearch"])
 
 
 if __name__ == "__main__":

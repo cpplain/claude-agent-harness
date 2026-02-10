@@ -187,7 +187,7 @@ allowed_commands = ["npm", "node", "ruby", "bundle", "init.sh"]
 
 When `git` is in the allowed commands list, destructive operations are automatically blocked:
 
-- **Blocked**: `git clean`, `git reset --hard`, `git checkout -- <path>`, `git push --force/-f`
+- **Blocked**: `git clean`, `git reset --hard`, `git checkout -- <path>`, `git restore`, `git push --force/-f`
 - **Allowed**: `git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`, etc.
 
 No additional configuration needed — git validation happens automatically.
@@ -260,9 +260,6 @@ max_iterations = 10
 # Delay in seconds before auto-continuing to next session
 auto_continue_delay = 3
 
-# Maximum total cost in USD before stopping (default: unlimited)
-max_budget_usd = 5.0
-
 # --- Tools ---
 [tools]
 # Built-in Claude SDK tools to enable
@@ -309,7 +306,7 @@ allowed_args = ["url"]
 # Tracker type: "json_checklist", "notes_file", "none"
 type = "json_checklist"
 
-# Tracking file path (relative to project_dir)
+# Tracking file path (relative to harness_dir)
 file = "feature_list.json"
 
 # Field name indicating completion (for json_checklist)
@@ -360,15 +357,14 @@ post_run_instructions = [
 
 #### Top-Level Settings
 
-| Field                   | Type     | Default                                 | Description                                                      |
-| ----------------------- | -------- | --------------------------------------- | ---------------------------------------------------------------- |
-| `model`                 | string   | `"claude-sonnet-4-5-20250929"`          | Claude model to use for agent execution                          |
-| `system_prompt`         | string   | `"You are a helpful coding assistant."` | System prompt (supports `file:` references)                      |
-| `max_turns`             | int      | `1000`                                  | Maximum API turns per session before auto-continuing             |
-| `max_iterations`        | int?     | `null`                                  | Maximum total sessions before stopping (unlimited if not set)    |
-| `auto_continue_delay`   | int      | `3`                                     | Delay in seconds before auto-continuing to next session          |
-| `max_budget_usd`        | float?   | `null`                                  | Maximum total cost in USD before stopping (unlimited if not set) |
-| `post_run_instructions` | string[] | `[]`                                    | Commands to display in final summary banner                      |
+| Field                   | Type     | Default                                 | Description                                                   |
+| ----------------------- | -------- | --------------------------------------- | ------------------------------------------------------------- |
+| `model`                 | string   | `"claude-sonnet-4-5-20250929"`          | Claude model to use for agent execution                       |
+| `system_prompt`         | string   | `"You are a helpful coding assistant."` | System prompt (supports `file:` references)                   |
+| `max_turns`             | int      | `1000`                                  | Maximum API turns per session before auto-continuing          |
+| `max_iterations`        | int?     | `null`                                  | Maximum total sessions before stopping (unlimited if not set) |
+| `auto_continue_delay`   | int      | `3`                                     | Delay in seconds before auto-continuing to next session       |
+| `post_run_instructions` | string[] | `[]`                                    | Commands to display in final summary banner                   |
 
 #### `[tools]` Section
 
@@ -425,7 +421,7 @@ Defined as `[security.mcp.tool_restrictions.<tool_name>]`:
 | Field           | Type   | Default    | Description                                                                          |
 | --------------- | ------ | ---------- | ------------------------------------------------------------------------------------ |
 | `type`          | string | `"none"`   | Tracker type: `"json_checklist"`, `"notes_file"`, or `"none"`                        |
-| `file`          | string | `""`       | Tracking file path (relative to project_dir, required for json_checklist/notes_file) |
+| `file`          | string | `""`       | Tracking file path (relative to harness_dir, required for json_checklist/notes_file) |
 | `passing_field` | string | `"passes"` | JSON field indicating completion (for json_checklist)                                |
 
 #### `[error_recovery]` Section
@@ -455,7 +451,7 @@ Multiple init files can be defined using `[[init_files]]` array syntax:
 | Field    | Type   | Default    | Description                                     |
 | -------- | ------ | ---------- | ----------------------------------------------- |
 | `source` | string | _required_ | Source file path (relative to harness_dir)      |
-| `dest`   | string | _required_ | Destination file path (relative to project_dir) |
+| `dest`   | string | _required_ | Destination file path (relative to harness_dir) |
 
 ### Config Loading Precedence
 
@@ -532,7 +528,7 @@ Check that all `file:` references in your config.toml point to files relative to
 
 ```toml
 [[phases]]
-system_prompt = "file:prompts/coding_prompt.md"  # Must exist at .agent-harness/prompts/coding_prompt.md
+prompt = "file:prompts/coding_prompt.md"  # Must exist at .agent-harness/prompts/coding_prompt.md
 ```
 
 ### "Command 'X' is not in the allowed commands list"

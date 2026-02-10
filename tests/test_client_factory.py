@@ -105,6 +105,29 @@ class TestWriteSettings(unittest.TestCase):
             settings_file = _write_settings(config)
             self.assertEqual(settings_file, config_dir / ".claude_settings.json")
 
+    def test_write_settings_skips_unchanged(self) -> None:
+        """Test that _write_settings doesn't rewrite file when content is unchanged."""
+        import time
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            config = HarnessConfig(harness_dir=config_dir)
+
+            # First write
+            settings_file = _write_settings(config)
+            self.assertTrue(settings_file.exists())
+
+            # Record mtime (wait briefly to ensure any write would change mtime)
+            first_mtime = os.path.getmtime(settings_file)
+            time.sleep(0.01)  # 10ms to ensure mtime resolution
+
+            # Second write with same config
+            _write_settings(config)
+            second_mtime = os.path.getmtime(settings_file)
+
+            # File should not have been rewritten (mtime unchanged)
+            self.assertEqual(first_mtime, second_mtime)
+
 
 class TestBuildAllowedTools(unittest.TestCase):
     """Test allowed tools list generation."""
@@ -324,7 +347,48 @@ class TestOAuthValidation(unittest.TestCase):
             self.assertIn("malformed", str(ctx.exception))
             self.assertIn("whitespace", str(ctx.exception))
 
-    @patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "  validtoken  "}, clear=True)
+    @patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "token\twith\ttabs"}, clear=True)
+    def test_token_with_tab_raises(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            config = HarnessConfig(
+                harness_dir=config_dir,
+                project_dir=Path(tmpdir),
+            )
+            with self.assertRaises(ValueError) as ctx:
+                create_client(config)
+            self.assertIn("malformed", str(ctx.exception))
+            self.assertIn("whitespace", str(ctx.exception))
+
+    @patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "short"}, clear=True)
+    def test_token_too_short_raises(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            config = HarnessConfig(
+                harness_dir=config_dir,
+                project_dir=Path(tmpdir),
+            )
+            with self.assertRaises(ValueError) as ctx:
+                create_client(config)
+            self.assertIn("too short", str(ctx.exception))
+
+    @patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "exactly20characters!"}, clear=True)
+    @patch("agent_harness.client_factory.ClaudeSDKClient")
+    def test_token_exactly_20_chars_accepted(self, mock_client_cls: MagicMock) -> None:
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            config = HarnessConfig(
+                harness_dir=config_dir,
+                project_dir=Path(tmpdir),
+            )
+            # Should NOT raise - 20 chars is the minimum
+            create_client(config)
+            mock_client_cls.assert_called_once()
+
+    @patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "  validtoken_long_enough_for_check  "}, clear=True)
     @patch("agent_harness.client_factory.ClaudeSDKClient")
     def test_token_whitespace_stripped(self, mock_client_cls: MagicMock) -> None:
         with TemporaryDirectory() as tmpdir:
@@ -341,7 +405,7 @@ class TestOAuthValidation(unittest.TestCase):
             # Verify the env dict passed to SDK contains stripped token
             call_kwargs = mock_client_cls.call_args
             options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
-            self.assertEqual(options.env["CLAUDE_CODE_OAUTH_TOKEN"], "validtoken")
+            self.assertEqual(options.env["CLAUDE_CODE_OAUTH_TOKEN"], "validtoken_long_enough_for_check")
 
     @patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "   "}, clear=True)
     def test_all_whitespace_token_raises_no_auth(self) -> None:

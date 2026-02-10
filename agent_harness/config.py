@@ -8,10 +8,14 @@ resolves file: references, and provides HarnessConfig dataclass.
 
 from __future__ import annotations
 
+import logging
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -24,6 +28,11 @@ else:
 
 CONFIG_DIR_NAME = ".agent-harness"
 CONFIG_FILE_NAME = "config.toml"
+DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+DEFAULT_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
+VALID_CONDITION_PREFIXES = ("exists:", "not_exists:")
+_KNOWN_BUILTIN_TOOLS = {"Read", "Write", "Edit", "Glob", "Grep", "Bash", "LSP", "NotebookEdit", "WebFetch", "WebSearch", "Skill", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}
+_KNOWN_TOP_LEVEL_KEYS = {"model", "system_prompt", "max_turns", "max_iterations", "auto_continue_delay", "tools", "security", "tracking", "error_recovery", "phases", "init_files", "post_run_instructions"}
 
 
 @dataclass
@@ -82,7 +91,7 @@ class ToolsConfig:
     """Tools configuration."""
 
     builtin: list[str] = field(
-        default_factory=lambda: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
+        default_factory=lambda: DEFAULT_BUILTIN_TOOLS.copy()
     )
     mcp_servers: dict[str, McpServerConfig] = field(default_factory=dict)
 
@@ -129,15 +138,13 @@ class HarnessConfig:
     """Top-level configuration for the agent harness."""
 
     # Agent
-    model: str = "claude-sonnet-4-5-20250929"
+    model: str = DEFAULT_MODEL
     system_prompt: str = "You are a helpful coding assistant."
 
     # Session
     max_turns: int = 1000
     max_iterations: Optional[int] = None
     auto_continue_delay: int = 3
-    max_budget_usd: Optional[float] = None
-
     # Tools
     tools: ToolsConfig = field(default_factory=ToolsConfig)
 
@@ -174,7 +181,11 @@ def resolve_file_reference(value: str, harness_dir: Path) -> str:
         return value
 
     rel_path = value[5:]  # Strip "file:" prefix
-    file_path = harness_dir / rel_path
+    file_path = (harness_dir / rel_path).resolve()
+    if not file_path.is_relative_to(harness_dir.resolve()):
+        raise ConfigError(
+            f"file: reference escapes harness directory: {value}"
+        )
     if not file_path.exists():
         raise ConfigError(f"Referenced file does not exist: {file_path}")
     return file_path.read_text()
@@ -184,8 +195,13 @@ class ConfigError(Exception):
     """Raised when configuration is invalid."""
 
 
-def _parse_extra_validator(name: str, data: dict[str, Any]) -> ExtraValidatorConfig:
-    """Parse an extra validator config from TOML data."""
+def _parse_extra_validator(_name: str, data: dict[str, Any]) -> ExtraValidatorConfig:
+    """Parse an extra validator config from TOML data.
+
+    Args:
+        _name: Validator name (unused, reserved for future use)
+        data: TOML data dict
+    """
     return ExtraValidatorConfig(
         allowed_targets=data.get("allowed_targets", []),
         allowed_modes=data.get("allowed_modes", []),
@@ -237,16 +253,30 @@ def _parse_tools(data: dict[str, Any]) -> ToolsConfig:
     """Parse tools config from TOML data."""
     mcp_servers = {}
     for name, server_data in data.get("mcp_servers", {}).items():
+        raw_env = server_data.get("env", {})
+        expanded_env = {}
+        for k, v in raw_env.items():
+            expanded = os.path.expandvars(v)
+            if expanded == v and "$" in v:
+                logger.warning(
+                    "MCP server '%s' env var '%s' may contain undefined variable: %s",
+                    name, k, v,
+                )
+            # Also warn when expansion produces empty string
+            if expanded != v and expanded == "":
+                logger.warning(
+                    "MCP server '%s' env var '%s' expanded to empty string: %s",
+                    name, k, v,
+                )
+            expanded_env[k] = expanded
         mcp_servers[name] = McpServerConfig(
             command=server_data.get("command", ""),
             args=server_data.get("args", []),
-            env=server_data.get("env", {}),
+            env=expanded_env,
         )
 
     return ToolsConfig(
-        builtin=data.get(
-            "builtin", ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
-        ),
+        builtin=data.get("builtin", DEFAULT_BUILTIN_TOOLS.copy()),
         mcp_servers=mcp_servers,
     )
 
@@ -288,9 +318,24 @@ def _parse_init_file(data: dict[str, Any]) -> InitFileConfig:
     )
 
 
+def _warn_unknown_keys(raw: dict[str, Any]) -> None:
+    """Warn about unrecognized top-level config keys."""
+    for key in raw:
+        if key not in _KNOWN_TOP_LEVEL_KEYS:
+            logger.warning(
+                "Unrecognized config key: %r (did you mean %s?)",
+                key,
+                ", ".join(sorted(_KNOWN_TOP_LEVEL_KEYS)),
+            )
+
+
 def _validate_config(config: HarnessConfig) -> list[str]:
     """Validate a HarnessConfig and return a list of error messages."""
     errors = []
+
+    # Validate model is non-empty string
+    if not isinstance(config.model, str) or not config.model:
+        errors.append("model must be a non-empty string")
 
     # Validate permission mode
     valid_modes = {"acceptEdits", "bypassPermissions", "plan"}
@@ -314,12 +359,35 @@ def _validate_config(config: HarnessConfig) -> list[str]:
             f"tracking.file is required when tracking.type is {config.tracking.type!r}"
         )
 
-    # Validate phases have names and prompts
+    # Validate builtin tools against known tools
+    for tool in config.tools.builtin:
+        if tool not in _KNOWN_BUILTIN_TOOLS:
+            errors.append(
+                f"Unknown builtin tool: {tool!r} (known tools: {sorted(_KNOWN_BUILTIN_TOOLS)})"
+            )
+
+    # Validate MCP server commands are non-empty
+    for name, server in config.tools.mcp_servers.items():
+        if not isinstance(server.command, str) or not server.command:
+            errors.append(f"tools.mcp_servers.{name}.command must be a non-empty string")
+
+    # Validate phases have names, prompts, and valid conditions
+    phase_names = set()
     for i, phase in enumerate(config.phases):
         if not phase.name:
             errors.append(f"phases[{i}].name is required")
+        else:
+            # Check for duplicate phase names
+            if phase.name in phase_names:
+                errors.append(f"Duplicate phase name: {phase.name!r}")
+            phase_names.add(phase.name)
         if not phase.prompt:
             errors.append(f"phases[{i}].prompt is required")
+        if phase.condition and not phase.condition.startswith(VALID_CONDITION_PREFIXES):
+            errors.append(
+                f"phases[{i}].condition must start with one of {VALID_CONDITION_PREFIXES}, "
+                f"got: {phase.condition!r}"
+            )
 
     # Validate init files have source and dest
     for i, init_file in enumerate(config.init_files):
@@ -328,23 +396,45 @@ def _validate_config(config: HarnessConfig) -> list[str]:
         if not init_file.dest:
             errors.append(f"init_files[{i}].dest is required")
 
-    # Validate max_turns is positive
-    if config.max_turns < 1:
+    # Validate max_turns is positive (with type check)
+    if not isinstance(config.max_turns, int):
+        errors.append(f"max_turns must be an integer, got: {type(config.max_turns).__name__}")
+    elif config.max_turns < 1:
         errors.append("max_turns must be positive")
 
-    # Validate auto_continue_delay is non-negative
-    if config.auto_continue_delay < 0:
+    # Validate auto_continue_delay is non-negative (with type check)
+    if not isinstance(config.auto_continue_delay, int):
+        errors.append(f"auto_continue_delay must be an integer, got: {type(config.auto_continue_delay).__name__}")
+    elif config.auto_continue_delay < 0:
         errors.append("auto_continue_delay must be non-negative")
 
-    # Validate error recovery settings
-    if config.error_recovery.max_consecutive_errors < 1:
+    # Validate max_iterations is positive when set (with type check)
+    if config.max_iterations is not None:
+        if not isinstance(config.max_iterations, int):
+            errors.append(f"max_iterations must be an integer, got: {type(config.max_iterations).__name__}")
+        elif config.max_iterations <= 0:
+            errors.append("max_iterations must be positive when set")
+
+    # Validate error recovery settings (with type checks)
+    if not isinstance(config.error_recovery.max_consecutive_errors, int):
+        errors.append(f"error_recovery.max_consecutive_errors must be an integer, got: {type(config.error_recovery.max_consecutive_errors).__name__}")
+    elif config.error_recovery.max_consecutive_errors < 1:
         errors.append("error_recovery.max_consecutive_errors must be positive")
-    if config.error_recovery.initial_backoff_seconds <= 0:
+
+    if not isinstance(config.error_recovery.initial_backoff_seconds, (int, float)):
+        errors.append(f"error_recovery.initial_backoff_seconds must be a number, got: {type(config.error_recovery.initial_backoff_seconds).__name__}")
+    elif config.error_recovery.initial_backoff_seconds <= 0:
         errors.append("error_recovery.initial_backoff_seconds must be positive")
-    if config.error_recovery.max_backoff_seconds < config.error_recovery.initial_backoff_seconds:
+
+    if not isinstance(config.error_recovery.max_backoff_seconds, (int, float)):
+        errors.append(f"error_recovery.max_backoff_seconds must be a number, got: {type(config.error_recovery.max_backoff_seconds).__name__}")
+    elif isinstance(config.error_recovery.initial_backoff_seconds, (int, float)) and config.error_recovery.max_backoff_seconds < config.error_recovery.initial_backoff_seconds:
         errors.append("error_recovery.max_backoff_seconds must be >= initial_backoff_seconds")
-    if config.error_recovery.backoff_multiplier <= 1.0:
-        errors.append("error_recovery.backoff_multiplier must be > 1.0")
+
+    if not isinstance(config.error_recovery.backoff_multiplier, (int, float)):
+        errors.append(f"error_recovery.backoff_multiplier must be a number, got: {type(config.error_recovery.backoff_multiplier).__name__}")
+    elif config.error_recovery.backoff_multiplier < 1.0:
+        errors.append("error_recovery.backoff_multiplier must be >= 1.0")
 
     return errors
 
@@ -381,14 +471,16 @@ def load_config(
     except Exception as e:
         raise ConfigError(f"Failed to parse {config_file}: {e}") from e
 
+    # Warn about unknown keys
+    _warn_unknown_keys(raw)
+
     # Build config from TOML data
     config = HarnessConfig(
-        model=raw.get("model", "claude-sonnet-4-5-20250929"),
+        model=raw.get("model", DEFAULT_MODEL),
         system_prompt=raw.get("system_prompt", "You are a helpful coding assistant."),
         max_turns=raw.get("max_turns", 1000),
         max_iterations=raw.get("max_iterations"),
         auto_continue_delay=raw.get("auto_continue_delay", 3),
-        max_budget_usd=raw.get("max_budget_usd"),
         tools=_parse_tools(raw.get("tools", {})),
         security=_parse_security(raw.get("security", {})),
         tracking=_parse_tracking(raw.get("tracking", {})),

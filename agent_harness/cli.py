@@ -10,22 +10,21 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from pathlib import Path
 
-from agent_harness.config import CONFIG_DIR_NAME, ConfigError, load_config
+from agent_harness.config import CONFIG_DIR_NAME, DEFAULT_BUILTIN_TOOLS, DEFAULT_MODEL, ConfigError, load_config
 from agent_harness.runner import run_agent
 from agent_harness.verify import print_verify_results, run_verify
 
-
-DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
 INIT_CONFIG_TEMPLATE = """\
 # Agent Harness Configuration
 # See README.md for full reference
 
 # --- Agent ---
-model = "claude-sonnet-4-5-20250929"
+model = "{DEFAULT_MODEL}"
 system_prompt = "You are a helpful coding assistant."
 # Or reference a file:
 # system_prompt = "file:prompts/system.md"
@@ -34,11 +33,9 @@ system_prompt = "You are a helpful coding assistant."
 max_turns = 1000
 # max_iterations = 10
 auto_continue_delay = 3
-# max_budget_usd = 5.0
-
 # --- Tools ---
 [tools]
-builtin = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
+builtin = {DEFAULT_BUILTIN_TOOLS}
 
 # [tools.mcp_servers.puppeteer]
 # command = "npx"
@@ -191,7 +188,12 @@ def cmd_init(args: argparse.Namespace) -> None:
     (harness_dir / "prompts").mkdir(exist_ok=True)
 
     config_file = harness_dir / "config.toml"
-    config_file.write_text(INIT_CONFIG_TEMPLATE)
+    template_replacements = INIT_CONFIG_TEMPLATE.replace("{DEFAULT_MODEL}", DEFAULT_MODEL)
+    template_replacements = template_replacements.replace(
+        "{DEFAULT_BUILTIN_TOOLS}",
+        json.dumps(DEFAULT_BUILTIN_TOOLS)
+    )
+    config_file.write_text(template_replacements)
 
     print(f"Created {harness_dir}/")
     print(f"  - config.toml (edit this to configure your project)")

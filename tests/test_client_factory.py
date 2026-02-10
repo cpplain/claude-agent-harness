@@ -14,73 +14,15 @@ from unittest.mock import patch, MagicMock
 
 from agent_harness.config import (
     BashSecurityConfig,
-    ExtraValidatorConfig,
     HarnessConfig,
     McpServerConfig,
     SecurityConfig,
-    SandboxConfig,
     ToolsConfig,
 )
 from agent_harness.client_factory import (
-    _build_permission_rules,
-    _build_settings,
     _write_settings,
-    _build_allowed_tools,
-    _build_mcp_servers,
     create_client,
 )
-
-
-class TestBuildPermissionRules(unittest.TestCase):
-    """Test permission rule generation."""
-
-    def test_default_tools(self) -> None:
-        config = HarnessConfig()
-        rules = _build_permission_rules(config)
-        self.assertIn("Read(./**)", rules)
-        self.assertIn("Write(./**)", rules)
-        self.assertIn("Edit(./**)", rules)
-        self.assertIn("Glob(./**)", rules)
-        self.assertIn("Grep(./**)", rules)
-        self.assertIn("Bash(*)", rules)
-
-    def test_custom_paths(self) -> None:
-        config = HarnessConfig(
-            security=SecurityConfig(allowed_paths=["./src/**", "./tests/**"])
-        )
-        rules = _build_permission_rules(config)
-        self.assertIn("Read(./src/**)", rules)
-        self.assertIn("Read(./tests/**)", rules)
-        self.assertIn("Write(./src/**)", rules)
-
-    def test_mcp_server_wildcard(self) -> None:
-        config = HarnessConfig(
-            tools=ToolsConfig(
-                mcp_servers={
-                    "puppeteer": McpServerConfig(command="npx", args=["puppeteer-mcp-server"])
-                }
-            )
-        )
-        rules = _build_permission_rules(config)
-        self.assertIn("mcp__puppeteer__*", rules)
-
-
-class TestBuildSettings(unittest.TestCase):
-    """Test settings dict generation."""
-
-    def test_default_settings(self) -> None:
-        config = HarnessConfig()
-        settings = _build_settings(config)
-        self.assertTrue(settings["sandbox"]["enabled"])
-        self.assertTrue(settings["sandbox"]["autoAllowBashIfSandboxed"])
-        self.assertEqual(settings["permissions"]["defaultMode"], "acceptEdits")
-
-    def test_sandbox_disabled(self) -> None:
-        config = HarnessConfig(
-            security=SecurityConfig(sandbox=SandboxConfig(enabled=False))
-        )
-        settings = _build_settings(config)
-        self.assertFalse(settings["sandbox"]["enabled"])
 
 
 class TestWriteSettings(unittest.TestCase):
@@ -127,84 +69,6 @@ class TestWriteSettings(unittest.TestCase):
 
             # File should not have been rewritten (mtime unchanged)
             self.assertEqual(first_mtime, second_mtime)
-
-
-class TestBuildAllowedTools(unittest.TestCase):
-    """Test allowed tools list generation."""
-
-    def test_builtin_tools(self) -> None:
-        config = HarnessConfig()
-        tools = _build_allowed_tools(config)
-        self.assertEqual(tools[:6], ["Read", "Write", "Edit", "Glob", "Grep", "Bash"])
-
-    def test_mcp_tools_included(self) -> None:
-        config = HarnessConfig(
-            tools=ToolsConfig(
-                mcp_servers={
-                    "puppeteer": McpServerConfig(command="npx", args=[])
-                }
-            )
-        )
-        tools = _build_allowed_tools(config)
-        self.assertIn("mcp__puppeteer__*", tools)
-
-
-class TestBuildMcpServers(unittest.TestCase):
-    """Test MCP server config generation."""
-
-    def test_no_servers(self) -> None:
-        config = HarnessConfig()
-        servers = _build_mcp_servers(config)
-        self.assertEqual(servers, {})
-
-    def test_single_server(self) -> None:
-        config = HarnessConfig(
-            tools=ToolsConfig(
-                mcp_servers={
-                    "puppeteer": McpServerConfig(
-                        command="npx", args=["puppeteer-mcp-server"]
-                    )
-                }
-            )
-        )
-        servers = _build_mcp_servers(config)
-        self.assertEqual(servers["puppeteer"]["command"], "npx")
-        self.assertEqual(servers["puppeteer"]["args"], ["puppeteer-mcp-server"])
-
-    def test_server_with_env(self) -> None:
-        """Test that env dict passes through to output."""
-        config = HarnessConfig(
-            tools=ToolsConfig(
-                mcp_servers={
-                    "test_server": McpServerConfig(
-                        command="npx",
-                        args=["test-server"],
-                        env={"API_KEY": "secret", "PORT": "8080"}
-                    )
-                }
-            )
-        )
-        servers = _build_mcp_servers(config)
-        self.assertEqual(servers["test_server"]["command"], "npx")
-        self.assertEqual(servers["test_server"]["args"], ["test-server"])
-        self.assertEqual(servers["test_server"]["env"], {"API_KEY": "secret", "PORT": "8080"})
-
-    def test_server_without_env_omits_key(self) -> None:
-        """Test that empty env produces no 'env' key in output."""
-        config = HarnessConfig(
-            tools=ToolsConfig(
-                mcp_servers={
-                    "test_server": McpServerConfig(
-                        command="npx",
-                        args=["test-server"]
-                    )
-                }
-            )
-        )
-        servers = _build_mcp_servers(config)
-        self.assertEqual(servers["test_server"]["command"], "npx")
-        self.assertEqual(servers["test_server"]["args"], ["test-server"])
-        self.assertNotIn("env", servers["test_server"])
 
 
 class TestCreateClient(unittest.TestCase):

@@ -12,12 +12,10 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from agent_harness.config import TrackingConfig
 from agent_harness.tracking import (
     JsonChecklistTracker,
     NoneTracker,
     NotesFileTracker,
-    create_tracker,
 )
 
 
@@ -213,7 +211,7 @@ class TestNotesFileTracker(unittest.TestCase):
         """Test display_summary shows preview and line count for multi-line notes."""
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "notes.txt"
-            # Create content with more than PREVIEW_LINES lines
+            # Create content with more than 5 lines
             lines = [f"Line {i}" for i in range(1, 11)]  # 10 lines
             path.write_text("\n".join(lines))
             tracker = NotesFileTracker(path)
@@ -275,30 +273,6 @@ class TestNoneTracker(unittest.TestCase):
         output = captured.getvalue()
         # Should produce no output at all
         self.assertEqual(output, "")
-
-
-class TestCreateTracker(unittest.TestCase):
-    """Tests for the tracker factory function."""
-
-    def test_create_json_checklist(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            config = TrackingConfig(
-                type="json_checklist", file="features.json", passing_field="passes"
-            )
-            tracker = create_tracker(config, Path(tmpdir))
-            self.assertIsInstance(tracker, JsonChecklistTracker)
-
-    def test_create_notes_file(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            config = TrackingConfig(type="notes_file", file="notes.txt")
-            tracker = create_tracker(config, Path(tmpdir))
-            self.assertIsInstance(tracker, NotesFileTracker)
-
-    def test_create_none(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            config = TrackingConfig(type="none")
-            tracker = create_tracker(config, Path(tmpdir))
-            self.assertIsInstance(tracker, NoneTracker)
 
 
 if __name__ == "__main__":

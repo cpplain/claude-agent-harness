@@ -22,26 +22,6 @@ from claude_agent_sdk import HookContext, HookInput, HookJSONOutput
 from agent_harness.config import BashSecurityConfig
 
 
-def _has_balanced_inner_parens(s: str) -> bool:
-    """Check if the content between outer parens has balanced parentheses.
-
-    Args:
-        s: The string between the outer parens (not including them)
-
-    Returns:
-        True if parentheses are balanced with no depth going negative
-    """
-    depth = 0
-    for char in s:
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-            if depth < 0:
-                return False
-    return depth == 0
-
-
 def _strip_outer_balanced_parens(s: str) -> str:
     """Strip matched balanced outer parentheses from a string.
 
@@ -54,7 +34,17 @@ def _strip_outer_balanced_parens(s: str) -> str:
         String with balanced outer parens removed
     """
     while len(s) >= 2 and s[0] == "(" and s[-1] == ")":
-        if not _has_balanced_inner_parens(s[1:-1]):
+        # Check if inner content has balanced parentheses
+        inner = s[1:-1]
+        depth = 0
+        for char in inner:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth < 0:
+                    break
+        if depth != 0:
             break
         s = s[1:-1]
     return s
@@ -151,15 +141,12 @@ def split_command_segments(command_string: str) -> list[str]:
 
     segments = re.split(r"\s*(?:&&|\|\|)\s*", command_string)
 
-    result = []
-    for segment in segments:
-        sub_segments = re.split(r'(?<!["\'])\s*;\s*(?!["\'])', segment)
-        for sub in sub_segments:
-            sub = _strip_outer_balanced_parens(sub.strip()).strip()
-            if sub:
-                result.append(sub)
-
-    return result
+    return [
+        stripped
+        for segment in segments
+        for sub in re.split(r'(?<!["\'])\s*;\s*(?!["\'])', segment)
+        if (stripped := _strip_outer_balanced_parens(sub.strip()).strip())
+    ]
 
 
 def extract_commands(command_string: str) -> list[str]:
@@ -238,23 +225,17 @@ def validate_pkill_command(
     except ValueError:
         return False, "Could not parse pkill command"
 
-    if not tokens:
-        return False, "Empty pkill command"
-
-    args = []
+    target = None
     for token in tokens[1:]:
         if not token.startswith("-"):
-            args.append(token)
+            target = token
 
-    if not args:
+    if target is None:
         return False, "pkill requires a process name"
 
-    target = args[-1]
-
-    allowed_set = set(allowed_targets)
-    if target in allowed_set:
+    if target in allowed_targets:
         return True, ""
-    return False, f"pkill only allowed for dev processes: {allowed_set}"
+    return False, f"pkill only allowed for dev processes: {allowed_targets}"
 
 
 def validate_chmod_command(
@@ -271,38 +252,23 @@ def validate_chmod_command(
     except ValueError:
         return False, "Could not parse chmod command"
 
-    if not tokens or tokens[0] != "chmod":
-        return False, "Not a chmod command"
-
     mode = None
-    files = []
-
     for token in tokens[1:]:
         if token.startswith("-"):
             return False, "chmod flags are not allowed"
         elif mode is None:
             mode = token
-        else:
-            files.append(token)
 
     if mode is None:
         return False, "chmod requires a mode"
 
-    if not files:
+    if len(tokens) < 3:
         return False, "chmod requires at least one file"
 
-    # Check if the mode matches any allowed pattern
-    # Allowed modes can be exact strings like "+x", "u+x", "644", etc.
-    # For symbolic modes like "+x", also allow [ugoa] prefixes (e.g. "+x" allows "u+x", "go+x")
-    for allowed in allowed_modes:
-        if mode == allowed:
-            break
-        # If the allowed mode starts with + or -, allow optional [ugoa] prefixes
-        if allowed.startswith(("+", "-")) and re.match(
-            r"^[ugoa]+" + re.escape(allowed) + "$", mode
-        ):
-            break
-    else:
+    if not any(
+        mode == a or (a.startswith(("+", "-")) and re.match(r"^[ugoa]+" + re.escape(a) + "$", mode))
+        for a in allowed_modes
+    ):
         return False, f"chmod mode '{mode}' not in allowed modes: {allowed_modes}"
 
     return True, ""
@@ -315,15 +281,9 @@ def validate_init_script(command_string: str) -> tuple[bool, str]:
     except ValueError:
         return False, "Could not parse init script command"
 
-    if not tokens:
-        return False, "Empty command"
-
-    script = tokens[0]
-
-    if script == "./init.sh":
+    if tokens[0] == "./init.sh":
         return True, ""
-
-    return False, f"Only ./init.sh is allowed, got: {script}"
+    return False, f"Only ./init.sh is allowed, got: {tokens[0]}"
 
 
 def validate_git_command(command_string: str) -> tuple[bool, str]:
@@ -346,9 +306,6 @@ def validate_git_command(command_string: str) -> tuple[bool, str]:
         tokens = shlex.split(command_string)
     except ValueError:
         return False, "Could not parse git command"
-
-    if not tokens or tokens[0] != "git":
-        return False, "Not a git command"
 
     if len(tokens) < 2:
         return False, "git requires a subcommand"
@@ -394,30 +351,6 @@ def validate_git_command(command_string: str) -> tuple[bool, str]:
     return True, ""
 
 
-def get_command_segment_pairs(segments: list[str]) -> list[tuple[str, str]]:
-    """Build (command_name, segment) pairs for each command in each segment.
-
-    This ensures that every command occurrence is paired with its own segment,
-    preventing a bypass where duplicate command names (e.g., two 'git' commands)
-    would always match the first segment.
-
-    Also splits on pipes (|) so that each piped sub-command is paired with only
-    its own text, preventing bypasses like "git status | git push --force".
-    """
-    pairs = []
-    for segment in segments:
-        # Split on single pipes (| but not ||) to handle piped commands separately
-        pipe_segments = re.split(r"(?<!\|)\|(?!\|)", segment)
-        for pipe_segment in pipe_segments:
-            pipe_segment = pipe_segment.strip()
-            if not pipe_segment:
-                continue
-            segment_commands = extract_commands(pipe_segment)
-            for cmd in segment_commands:
-                pairs.append((cmd, pipe_segment))
-    return pairs
-
-
 def create_bash_security_hook(bash_config: BashSecurityConfig):
     """Create a bash security hook from configuration.
 
@@ -432,14 +365,7 @@ def create_bash_security_hook(bash_config: BashSecurityConfig):
     extra_validators = bash_config.extra_validators
 
     # Determine which commands need extra validation
-    commands_needing_extra = set()
-    for cmd_name in extra_validators:
-        commands_needing_extra.add(cmd_name)
-    # Also add init.sh and git if they're in the allowlist (always need validation)
-    if "init.sh" in allowed_commands:
-        commands_needing_extra.add("init.sh")
-    if "git" in allowed_commands:
-        commands_needing_extra.add("git")
+    commands_needing_extra = set(extra_validators) | ({"init.sh", "git"} & allowed_commands)
 
     async def bash_security_hook(
         input_data: HookInput,
@@ -459,7 +385,24 @@ def create_bash_security_hook(bash_config: BashSecurityConfig):
             }
 
         segments = split_command_segments(command)
-        pairs = get_command_segment_pairs(segments)
+
+        # Build (command_name, segment) pairs for each command in each segment
+        # This ensures that every command occurrence is paired with its own segment,
+        # preventing a bypass where duplicate command names (e.g., two 'git' commands)
+        # would always match the first segment.
+        # Also splits on pipes (|) so that each piped sub-command is paired with only
+        # its own text, preventing bypasses like "git status | git push --force".
+        pairs = []
+        for segment in segments:
+            # Split on single pipes (| but not ||) to handle piped commands separately
+            pipe_segments = re.split(r"(?<!\|)\|(?!\|)", segment)
+            for pipe_segment in pipe_segments:
+                pipe_segment = pipe_segment.strip()
+                if not pipe_segment:
+                    continue
+                segment_commands = extract_commands(pipe_segment)
+                for cmd in segment_commands:
+                    pairs.append((cmd, pipe_segment))
 
         if not pairs:
             return {
@@ -475,28 +418,24 @@ def create_bash_security_hook(bash_config: BashSecurityConfig):
                 }
 
             if cmd in commands_needing_extra:
-                if cmd == "pkill" and "pkill" in extra_validators:
+                if cmd == "pkill":
                     validator_config = extra_validators["pkill"]
                     allowed, reason = validate_pkill_command(
                         cmd_segment, validator_config.allowed_targets
                     )
-                    if not allowed:
-                        return {"decision": "block", "reason": reason}
-                elif cmd == "chmod" and "chmod" in extra_validators:
+                elif cmd == "chmod":
                     validator_config = extra_validators["chmod"]
                     allowed, reason = validate_chmod_command(
                         cmd_segment, validator_config.allowed_modes
                     )
-                    if not allowed:
-                        return {"decision": "block", "reason": reason}
                 elif cmd == "init.sh":
                     allowed, reason = validate_init_script(cmd_segment)
-                    if not allowed:
-                        return {"decision": "block", "reason": reason}
                 elif cmd == "git":
                     allowed, reason = validate_git_command(cmd_segment)
-                    if not allowed:
-                        return {"decision": "block", "reason": reason}
+                else:
+                    continue
+                if not allowed:
+                    return {"decision": "block", "reason": reason}
 
         return {}
 

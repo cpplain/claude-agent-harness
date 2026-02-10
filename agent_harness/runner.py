@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -27,19 +28,16 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
-from agent_harness.config import HarnessConfig, PhaseConfig
+from agent_harness.config import ConfigError, HarnessConfig, PhaseConfig
 from agent_harness.client_factory import create_client
-from agent_harness.display import print_banner, print_progress, print_final_summary, print_session_header
-from agent_harness.prompts import copy_init_files
-from agent_harness.tracking import create_tracker, ProgressTracker
+from agent_harness.tracking import (
+    JsonChecklistTracker,
+    NoneTracker,
+    NotesFileTracker,
+    ProgressTracker,
+)
 
-
-# Session state file
-SESSION_STATE_FILE = "session.json"
-
-# Display length constants
-MAX_TOOL_INPUT_DISPLAY_LEN = 200
-MAX_ERROR_DISPLAY_LEN = 500
+BANNER_WIDTH = 70
 
 
 def _load_session_state(config: HarnessConfig) -> dict:
@@ -48,7 +46,7 @@ def _load_session_state(config: HarnessConfig) -> dict:
     Prunes completed_phases entries that don't match any configured phase name,
     handling renames or removals gracefully.
     """
-    state_file = config.harness_dir / SESSION_STATE_FILE
+    state_file = config.harness_dir / "session.json"
     state = {"session_number": 0, "completed_phases": []}
     if state_file.exists():
         try:
@@ -77,7 +75,7 @@ def _save_session_state(config: HarnessConfig, state: dict) -> None:
     Uses atomic write (temp file + rename) to prevent corruption.
     Logs OSError as warning instead of crashing.
     """
-    state_file = config.harness_dir / SESSION_STATE_FILE
+    state_file = config.harness_dir / "session.json"
     try:
         # Create temp file in same directory for atomic rename
         fd, temp_path = tempfile.mkstemp(
@@ -121,28 +119,23 @@ def evaluate_condition(condition: str, project_dir: Path) -> bool:
         return True
 
     if condition.startswith("exists:"):
-        path = project_dir / condition[7:]
-        # Protect against path traversal
-        resolved = path.resolve()
-        if not resolved.is_relative_to(project_dir.resolve()):
-            raise ValueError(
-                f"Path {condition[7:]!r} escapes project directory"
-            )
-        return path.exists()
+        prefix, negate = "exists:", False
     elif condition.startswith("not_exists:"):
-        path = project_dir / condition[11:]
-        # Protect against path traversal
-        resolved = path.resolve()
-        if not resolved.is_relative_to(project_dir.resolve()):
-            raise ValueError(
-                f"Path {condition[11:]!r} escapes project directory"
-            )
-        return not path.exists()
+        prefix, negate = "not_exists:", True
+    else:
+        raise ValueError(
+            f"Unknown condition prefix in {condition!r} — "
+            f"only 'exists:' and 'not_exists:' are supported"
+        )
 
-    raise ValueError(
-        f"Unknown condition prefix in {condition!r} — "
-        f"only 'exists:' and 'not_exists:' are supported"
-    )
+    path = project_dir / condition[len(prefix):]
+    # Protect against path traversal
+    resolved = path.resolve()
+    if not resolved.is_relative_to(project_dir.resolve()):
+        raise ValueError(
+            f"Path {condition[len(prefix):]!r} escapes project directory"
+        )
+    return not path.exists() if negate else path.exists()
 
 
 def select_phase(
@@ -201,29 +194,23 @@ async def run_agent_session(
     try:
         await client.query(message)
 
-        response_text = ""
         async for msg in client.receive_response():
             if isinstance(msg, AssistantMessage):
                 for block in msg.content:
                     if isinstance(block, TextBlock):
-                        response_text += block.text
                         print(block.text, end="", flush=True)
                     elif isinstance(block, ToolUseBlock):
                         print(f"\n[Tool: {block.name}]", flush=True)
                         input_str = str(block.input)
-                        if len(input_str) > MAX_TOOL_INPUT_DISPLAY_LEN:
-                            print(f"   Input: {input_str[:MAX_TOOL_INPUT_DISPLAY_LEN]}...", flush=True)
-                        else:
-                            print(f"   Input: {input_str}", flush=True)
+                        print(f"   Input: {input_str[:200]}{'...' if len(input_str) > 200 else ''}", flush=True)
 
             elif isinstance(msg, UserMessage) and isinstance(msg.content, list):
                 for block in msg.content:
                     if isinstance(block, ToolResultBlock):
                         result_content = block.content or ""
-                        is_error = block.is_error or False
 
-                        if is_error:
-                            error_str = str(result_content)[:MAX_ERROR_DISPLAY_LEN]
+                        if block.is_error:
+                            error_str = str(result_content)[:500]
                             if "blocked" in error_str.lower():
                                 print(f"   [BLOCKED] {result_content}", flush=True)
                             else:
@@ -232,7 +219,7 @@ async def run_agent_session(
                             print("   [Done]", flush=True)
 
         print("\n" + "-" * 70 + "\n")
-        return "continue", response_text
+        return "continue", ""
 
     except (OSError, IOError, ConnectionError, TimeoutError, RuntimeError) as e:
         logger.exception("Error during agent session")
@@ -240,100 +227,38 @@ async def run_agent_session(
         return "error", str(e)
 
 
-def _build_session_prompt(phase_prompt: str, last_error_message: str) -> str:
-    """Build the session prompt, prepending error context if needed.
+def copy_init_files(config: HarnessConfig) -> None:
+    """Copy init_files to harness_dir if they don't already exist.
 
     Args:
-        phase_prompt: The phase's prompt text
-        last_error_message: Error message from the previous session, or ""
+        config: Harness configuration with init_files and paths
 
-    Returns:
-        The prompt to send to the agent
+    Raises:
+        ConfigError: If source or dest paths escape harness directory
     """
-    if last_error_message:
-        truncated = last_error_message[:MAX_ERROR_DISPLAY_LEN]
-        error_context = (
-            f"Note: The previous session encountered an error: {truncated}\n"
-            "Please continue with your work.\n\n"
-        )
-        return error_context + phase_prompt
-    return phase_prompt
+    harness_dir_resolved = config.harness_dir.resolve()
 
+    for init_file in config.init_files:
+        source = (config.harness_dir / init_file.source).resolve()
+        dest = (config.harness_dir / init_file.dest).resolve()
 
-def _handle_error(
-    config: HarnessConfig,
-    consecutive_errors: int,
-    response: str,
-) -> tuple[int, str, float, bool]:
-    """Handle an error status from a session.
+        # Path traversal protection
+        if not source.is_relative_to(harness_dir_resolved):
+            raise ConfigError(
+                f"init_files source escapes harness directory: {init_file.source}"
+            )
+        if not dest.is_relative_to(harness_dir_resolved):
+            raise ConfigError(
+                f"init_files dest escapes harness directory: {init_file.dest}"
+            )
 
-    Args:
-        config: Harness configuration
-        consecutive_errors: Current consecutive error count
-        response: Error response text
-
-    Returns:
-        (consecutive_errors, last_error_message, backoff_delay, should_break)
-    """
-    consecutive_errors += 1
-    last_error_message = response
-
-    backoff_delay = min(
-        config.error_recovery.initial_backoff_seconds
-        * (config.error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
-        config.error_recovery.max_backoff_seconds,
-    )
-
-    print(
-        f"\nSession encountered an error "
-        f"(attempt {consecutive_errors}/{config.error_recovery.max_consecutive_errors})"
-    )
-
-    should_break = consecutive_errors >= config.error_recovery.max_consecutive_errors
-    if should_break:
-        print(
-            f"\nReached maximum consecutive errors "
-            f"({config.error_recovery.max_consecutive_errors})"
-        )
-
-    return consecutive_errors, last_error_message, backoff_delay, should_break
-
-
-def _handle_success(
-    config: HarnessConfig,
-    state: dict,
-    phase: Optional[PhaseConfig],
-    tracker: ProgressTracker,
-) -> tuple[bool, str]:
-    """Handle a successful session.
-
-    Marks run_once phases as completed, prints progress,
-    and checks for completion.
-
-    Args:
-        config: Harness configuration
-        state: Session state dict (mutated in place)
-        phase: The phase that was run, or None
-        tracker: Progress tracker
-
-    Returns:
-        (is_complete, exit_reason) — is_complete=True means agent should stop
-    """
-    # Mark run_once phase as completed
-    if phase is not None and phase.run_once:
-        completed = state.get("completed_phases", [])
-        if phase.name not in completed:
-            completed.append(phase.name)
-            state["completed_phases"] = completed
-
-    print(f"\nAgent will auto-continue in {config.auto_continue_delay}s...")
-    print_progress(tracker)
-
-    if tracker.is_complete():
-        print("\n✓ All items passing! Agent work is complete.")
-        return True, "ALL COMPLETE"
-
-    return False, ""
+        if not dest.exists():
+            if not source.exists():
+                logger.warning("init file source not found: %s", source)
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(source, dest)
+            print(f"Copied {init_file.source} to {dest}")
 
 
 async def run_agent(config: HarnessConfig) -> None:
@@ -343,23 +268,28 @@ async def run_agent(config: HarnessConfig) -> None:
         config: Harness configuration
     """
     # Create tracker
-    tracker = create_tracker(config.tracking, config.harness_dir)
+    if config.tracking.type == "json_checklist":
+        tracker: ProgressTracker = JsonChecklistTracker(
+            file_path=config.harness_dir / config.tracking.file,
+            passing_field=config.tracking.passing_field,
+        )
+    elif config.tracking.type == "notes_file":
+        tracker = NotesFileTracker(file_path=config.harness_dir / config.tracking.file)
+    else:
+        tracker = NoneTracker()
 
     # Load session state
     state = _load_session_state(config)
 
-    # Print banner
-    summary = {
-        "Project directory": str(config.project_dir),
-        "Harness directory": str(config.harness_dir),
-        "Model": config.model,
-    }
-    if config.max_iterations:
-        summary["Max iterations"] = str(config.max_iterations)
-    else:
-        summary["Max iterations"] = "Unlimited"
-
-    print_banner("AGENT HARNESS", summary)
+    # Print startup banner
+    print("\n" + "=" * BANNER_WIDTH)
+    print("  AGENT HARNESS")
+    print("=" * BANNER_WIDTH)
+    print(f"\nProject directory: {config.project_dir}")
+    print(f"\nHarness directory: {config.harness_dir}")
+    print(f"\nModel: {config.model}")
+    print(f"\nMax iterations: {config.max_iterations or 'Unlimited'}")
+    print()
 
     # Ensure project directory exists
     config.project_dir.mkdir(parents=True, exist_ok=True)
@@ -369,7 +299,7 @@ async def run_agent(config: HarnessConfig) -> None:
 
     # Show initial progress
     if tracker.is_initialized():
-        print_progress(tracker)
+        tracker.display_summary()
 
     # Main loop
     iteration = 0
@@ -384,7 +314,6 @@ async def run_agent(config: HarnessConfig) -> None:
         # Check max iterations
         if config.max_iterations and iteration > config.max_iterations:
             print(f"\nReached max iterations ({config.max_iterations})")
-            exit_reason = "MAX ITERATIONS"
             break
 
         # Select phase
@@ -404,17 +333,22 @@ async def run_agent(config: HarnessConfig) -> None:
             prompt = "Begin working."
 
         # Build prompt with error context if needed
-        prompt = _build_session_prompt(prompt, last_error_message)
+        if last_error_message:
+            prompt = (
+                f"Note: The previous session encountered an error: {last_error_message[:500]}\n"
+                "Please continue with your work.\n\n"
+            ) + prompt
 
         # Print session header
-        print_session_header(state["session_number"], phase_name)
+        print("\n" + "=" * BANNER_WIDTH)
+        print(f"  SESSION {state['session_number']}: {phase_name.upper()}")
+        print("=" * BANNER_WIDTH)
+        print()
 
         # Create client (fresh context each session)
         client = create_client(config)
 
         # Run session
-        status = "error"
-        response = ""
         async with client:
             status, response = await run_agent_session(client, prompt)
 
@@ -422,17 +356,44 @@ async def run_agent(config: HarnessConfig) -> None:
         if status == "continue":
             consecutive_errors = 0
             last_error_message = ""
-            is_complete, exit_reason = _handle_success(config, state, phase, tracker)
-            _save_session_state(config, state)
-            if is_complete:
+
+            # Mark run_once phase as completed
+            if phase is not None and phase.run_once and phase.name not in state["completed_phases"]:
+                state["completed_phases"].append(phase.name)
+
+            print(f"\nAgent will auto-continue in {config.auto_continue_delay}s...")
+            tracker.display_summary()
+
+            if tracker.is_complete():
+                print("\n✓ All items passing! Agent work is complete.")
+                exit_reason = "ALL COMPLETE"
+                _save_session_state(config, state)
                 break
+
+            _save_session_state(config, state)
             await asyncio.sleep(config.auto_continue_delay)
         elif status == "error":
             _save_session_state(config, state)
-            consecutive_errors, last_error_message, backoff_delay, should_break = (
-                _handle_error(config, consecutive_errors, response)
+
+            consecutive_errors += 1
+            last_error_message = response
+
+            backoff_delay = min(
+                config.error_recovery.initial_backoff_seconds
+                * (config.error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
+                config.error_recovery.max_backoff_seconds,
             )
-            if should_break:
+
+            print(
+                f"\nSession encountered an error "
+                f"(attempt {consecutive_errors}/{config.error_recovery.max_consecutive_errors})"
+            )
+
+            if consecutive_errors >= config.error_recovery.max_consecutive_errors:
+                print(
+                    f"\nReached maximum consecutive errors "
+                    f"({config.error_recovery.max_consecutive_errors})"
+                )
                 exit_reason = "TOO MANY ERRORS"
                 break
 
@@ -440,10 +401,18 @@ async def run_agent(config: HarnessConfig) -> None:
             await asyncio.sleep(backoff_delay)
 
     # Final summary
-    print_final_summary(
-        exit_reason=exit_reason,
-        output_dir=str(config.project_dir),
-        tracker=tracker,
-        post_run_instructions=config.post_run_instructions,
-    )
+    print("\n" + "=" * BANNER_WIDTH)
+    print(f"  {exit_reason}")
+    print("=" * BANNER_WIDTH)
+    print(f"\nOutput directory: {config.project_dir}")
+    tracker.display_summary()
+
+    if config.post_run_instructions:
+        print("\n" + "-" * BANNER_WIDTH)
+        print("  NEXT STEPS:")
+        print("-" * BANNER_WIDTH)
+        for instruction in config.post_run_instructions:
+            print(f"  {instruction}")
+        print("-" * BANNER_WIDTH)
+
     print("\nDone!")

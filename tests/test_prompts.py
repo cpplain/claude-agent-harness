@@ -10,7 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from agent_harness.config import ConfigError, HarnessConfig, InitFileConfig, resolve_file_reference
-from agent_harness.prompts import copy_init_files
+from agent_harness.runner import copy_init_files
 
 
 class TestResolveFileReference(unittest.TestCase):
@@ -119,7 +119,7 @@ class TestCopyInitFiles(unittest.TestCase):
                 init_files=[InitFileConfig(source="missing.txt", dest="out.txt")],
             )
             # Should not raise, should log warning
-            with self.assertLogs("agent_harness.prompts", level=logging.WARNING) as cm:
+            with self.assertLogs("agent_harness.runner", level=logging.WARNING) as cm:
                 copy_init_files(config)
             self.assertTrue(any("missing.txt" in msg for msg in cm.output))
             # Dest should NOT have been created

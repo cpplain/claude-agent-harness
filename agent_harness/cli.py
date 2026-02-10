@@ -16,7 +16,7 @@ from pathlib import Path
 
 from agent_harness.config import CONFIG_DIR_NAME, DEFAULT_BUILTIN_TOOLS, DEFAULT_MODEL, ConfigError, load_config
 from agent_harness.runner import run_agent
-from agent_harness.verify import print_verify_results, run_verify
+from agent_harness.verify import run_verify
 
 
 INIT_CONFIG_TEMPLATE = """\
@@ -139,13 +139,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     project_dir = args.project_dir.resolve()
     harness_dir = args.harness_dir.resolve() if args.harness_dir else None
 
-    cli_overrides = {
-        "model": args.model,
-        "max_iterations": args.max_iterations,
-    }
-
     try:
-        config = load_config(project_dir, harness_dir, cli_overrides)
+        config = load_config(project_dir, harness_dir, {
+            "model": args.model,
+            "max_iterations": args.max_iterations,
+        })
     except ConfigError as e:
         print(f"Configuration error: {e}")
         sys.exit(1)
@@ -166,10 +164,27 @@ def cmd_verify(args: argparse.Namespace) -> None:
     harness_dir = args.harness_dir.resolve() if args.harness_dir else None
 
     results = run_verify(project_dir, harness_dir)
-    success = print_verify_results(results)
 
-    if not success:
+    print("\nVerification Results:")
+    print("-" * 50)
+
+    for result in results:
+        print(result)
+
+    print("-" * 50)
+
+    fails = sum(1 for r in results if r.status == "FAIL")
+    warns = sum(1 for r in results if r.status == "WARN")
+    passes = sum(1 for r in results if r.status == "PASS")
+
+    print(f"\n  {passes} passed, {warns} warnings, {fails} failed")
+
+    if fails > 0:
+        print("\n  Fix the FAIL items above before running the agent.")
         sys.exit(1)
+
+    if warns > 0:
+        print("\n  Warnings are non-blocking but may cause issues.")
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -177,23 +192,18 @@ def cmd_init(args: argparse.Namespace) -> None:
     project_dir = args.project_dir.resolve()
     harness_dir = args.harness_dir.resolve() if args.harness_dir else project_dir / CONFIG_DIR_NAME
 
-    if harness_dir.exists():
-        config_file = harness_dir / "config.toml"
-        if config_file.exists():
-            print(f"Config already exists: {config_file}")
-            print("Remove it first if you want to reinitialize.")
-            sys.exit(1)
+    config_file = harness_dir / "config.toml"
+    if config_file.exists():
+        print(f"Config already exists: {config_file}")
+        print("Remove it first if you want to reinitialize.")
+        sys.exit(1)
 
     harness_dir.mkdir(parents=True, exist_ok=True)
     (harness_dir / "prompts").mkdir(exist_ok=True)
-
-    config_file = harness_dir / "config.toml"
-    template_replacements = INIT_CONFIG_TEMPLATE.replace("{DEFAULT_MODEL}", DEFAULT_MODEL)
-    template_replacements = template_replacements.replace(
-        "{DEFAULT_BUILTIN_TOOLS}",
-        json.dumps(DEFAULT_BUILTIN_TOOLS)
+    config_file.write_text(
+        INIT_CONFIG_TEMPLATE.replace("{DEFAULT_MODEL}", DEFAULT_MODEL)
+        .replace("{DEFAULT_BUILTIN_TOOLS}", json.dumps(DEFAULT_BUILTIN_TOOLS))
     )
-    config_file.write_text(template_replacements)
 
     print(f"Created {harness_dir}/")
     print(f"  - config.toml (edit this to configure your project)")
@@ -214,9 +224,4 @@ def main() -> None:
         parser.print_help()
         sys.exit(0)
 
-    if args.command == "run":
-        cmd_run(args)
-    elif args.command == "verify":
-        cmd_verify(args)
-    elif args.command == "init":
-        cmd_init(args)
+    {"run": cmd_run, "verify": cmd_verify, "init": cmd_init}[args.command](args)

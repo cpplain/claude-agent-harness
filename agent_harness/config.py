@@ -27,10 +27,8 @@ else:
 
 
 CONFIG_DIR_NAME = ".agent-harness"
-CONFIG_FILE_NAME = "config.toml"
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 DEFAULT_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
-VALID_CONDITION_PREFIXES = ("exists:", "not_exists:")
 _KNOWN_BUILTIN_TOOLS = {"Read", "Write", "Edit", "Glob", "Grep", "Bash", "LSP", "NotebookEdit", "WebFetch", "WebSearch", "Skill", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}
 _KNOWN_TOP_LEVEL_KEYS = {"model", "system_prompt", "max_turns", "max_iterations", "auto_continue_delay", "tools", "security", "tracking", "error_recovery", "phases", "init_files", "post_run_instructions"}
 
@@ -60,13 +58,6 @@ class SandboxConfig:
 
 
 @dataclass
-class McpSecurityConfig:
-    """Configuration for MCP tool restrictions."""
-
-    tool_restrictions: dict[str, dict] = field(default_factory=dict)
-
-
-@dataclass
 class SecurityConfig:
     """Security configuration."""
 
@@ -74,7 +65,7 @@ class SecurityConfig:
     allowed_paths: list[str] = field(default_factory=lambda: ["./**"])
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     bash: Optional[BashSecurityConfig] = None
-    mcp: Optional[McpSecurityConfig] = None
+    mcp_tool_restrictions: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass
@@ -195,139 +186,6 @@ class ConfigError(Exception):
     """Raised when configuration is invalid."""
 
 
-def _parse_extra_validator(_name: str, data: dict[str, Any]) -> ExtraValidatorConfig:
-    """Parse an extra validator config from TOML data.
-
-    Args:
-        _name: Validator name (unused, reserved for future use)
-        data: TOML data dict
-    """
-    return ExtraValidatorConfig(
-        allowed_targets=data.get("allowed_targets", []),
-        allowed_modes=data.get("allowed_modes", []),
-    )
-
-
-def _parse_bash_security(data: dict[str, Any]) -> BashSecurityConfig:
-    """Parse bash security config from TOML data."""
-    extra_validators = {}
-    for name, validator_data in data.get("extra_validators", {}).items():
-        extra_validators[name] = _parse_extra_validator(name, validator_data)
-
-    return BashSecurityConfig(
-        allowed_commands=data.get("allowed_commands", []),
-        extra_validators=extra_validators,
-    )
-
-
-def _parse_security(data: dict[str, Any]) -> SecurityConfig:
-    """Parse security config from TOML data."""
-    sandbox_data = data.get("sandbox", {})
-    sandbox = SandboxConfig(
-        enabled=sandbox_data.get("enabled", True),
-        auto_allow_bash_if_sandboxed=sandbox_data.get(
-            "auto_allow_bash_if_sandboxed", True
-        ),
-    )
-
-    bash = None
-    if "bash" in data:
-        bash = _parse_bash_security(data["bash"])
-
-    mcp = None
-    if "mcp" in data:
-        mcp = McpSecurityConfig(
-            tool_restrictions=data["mcp"].get("tool_restrictions", {})
-        )
-
-    return SecurityConfig(
-        permission_mode=data.get("permission_mode", "acceptEdits"),
-        allowed_paths=data.get("allowed_paths", ["./**"]),
-        sandbox=sandbox,
-        bash=bash,
-        mcp=mcp,
-    )
-
-
-def _parse_tools(data: dict[str, Any]) -> ToolsConfig:
-    """Parse tools config from TOML data."""
-    mcp_servers = {}
-    for name, server_data in data.get("mcp_servers", {}).items():
-        raw_env = server_data.get("env", {})
-        expanded_env = {}
-        for k, v in raw_env.items():
-            expanded = os.path.expandvars(v)
-            if expanded == v and "$" in v:
-                logger.warning(
-                    "MCP server '%s' env var '%s' may contain undefined variable: %s",
-                    name, k, v,
-                )
-            # Also warn when expansion produces empty string
-            if expanded != v and expanded == "":
-                logger.warning(
-                    "MCP server '%s' env var '%s' expanded to empty string: %s",
-                    name, k, v,
-                )
-            expanded_env[k] = expanded
-        mcp_servers[name] = McpServerConfig(
-            command=server_data.get("command", ""),
-            args=server_data.get("args", []),
-            env=expanded_env,
-        )
-
-    return ToolsConfig(
-        builtin=data.get("builtin", DEFAULT_BUILTIN_TOOLS.copy()),
-        mcp_servers=mcp_servers,
-    )
-
-
-def _parse_tracking(data: dict[str, Any]) -> TrackingConfig:
-    """Parse tracking config from TOML data."""
-    return TrackingConfig(
-        type=data.get("type", "none"),
-        file=data.get("file", ""),
-        passing_field=data.get("passing_field", "passes"),
-    )
-
-
-def _parse_error_recovery(data: dict[str, Any]) -> ErrorRecoveryConfig:
-    """Parse error recovery config from TOML data."""
-    return ErrorRecoveryConfig(
-        max_consecutive_errors=data.get("max_consecutive_errors", 5),
-        initial_backoff_seconds=data.get("initial_backoff_seconds", 5.0),
-        max_backoff_seconds=data.get("max_backoff_seconds", 120.0),
-        backoff_multiplier=data.get("backoff_multiplier", 2.0),
-    )
-
-
-def _parse_phase(data: dict[str, Any]) -> PhaseConfig:
-    """Parse a single phase config from TOML data."""
-    return PhaseConfig(
-        name=data.get("name", ""),
-        prompt=data.get("prompt", ""),
-        run_once=data.get("run_once", False),
-        condition=data.get("condition", ""),
-    )
-
-
-def _parse_init_file(data: dict[str, Any]) -> InitFileConfig:
-    """Parse an init file config from TOML data."""
-    return InitFileConfig(
-        source=data.get("source", ""),
-        dest=data.get("dest", ""),
-    )
-
-
-def _warn_unknown_keys(raw: dict[str, Any]) -> None:
-    """Warn about unrecognized top-level config keys."""
-    for key in raw:
-        if key not in _KNOWN_TOP_LEVEL_KEYS:
-            logger.warning(
-                "Unrecognized config key: %r (did you mean %s?)",
-                key,
-                ", ".join(sorted(_KNOWN_TOP_LEVEL_KEYS)),
-            )
-
 
 def _validate_config(config: HarnessConfig) -> list[str]:
     """Validate a HarnessConfig and return a list of error messages."""
@@ -383,9 +241,9 @@ def _validate_config(config: HarnessConfig) -> list[str]:
             phase_names.add(phase.name)
         if not phase.prompt:
             errors.append(f"phases[{i}].prompt is required")
-        if phase.condition and not phase.condition.startswith(VALID_CONDITION_PREFIXES):
+        if phase.condition and not phase.condition.startswith(("exists:", "not_exists:")):
             errors.append(
-                f"phases[{i}].condition must start with one of {VALID_CONDITION_PREFIXES}, "
+                f"phases[{i}].condition must start with one of ('exists:', 'not_exists:'), "
                 f"got: {phase.condition!r}"
             )
 
@@ -396,26 +254,26 @@ def _validate_config(config: HarnessConfig) -> list[str]:
         if not init_file.dest:
             errors.append(f"init_files[{i}].dest is required")
 
-    # Validate max_turns is positive (with type check)
+    # Validate max_turns
     if not isinstance(config.max_turns, int):
         errors.append(f"max_turns must be an integer, got: {type(config.max_turns).__name__}")
     elif config.max_turns < 1:
         errors.append("max_turns must be positive")
 
-    # Validate auto_continue_delay is non-negative (with type check)
+    # Validate auto_continue_delay
     if not isinstance(config.auto_continue_delay, int):
         errors.append(f"auto_continue_delay must be an integer, got: {type(config.auto_continue_delay).__name__}")
     elif config.auto_continue_delay < 0:
         errors.append("auto_continue_delay must be non-negative")
 
-    # Validate max_iterations is positive when set (with type check)
+    # Validate max_iterations
     if config.max_iterations is not None:
         if not isinstance(config.max_iterations, int):
             errors.append(f"max_iterations must be an integer, got: {type(config.max_iterations).__name__}")
         elif config.max_iterations <= 0:
             errors.append("max_iterations must be positive when set")
 
-    # Validate error recovery settings (with type checks)
+    # Validate error recovery settings
     if not isinstance(config.error_recovery.max_consecutive_errors, int):
         errors.append(f"error_recovery.max_consecutive_errors must be an integer, got: {type(config.error_recovery.max_consecutive_errors).__name__}")
     elif config.error_recovery.max_consecutive_errors < 1:
@@ -460,7 +318,7 @@ def load_config(
     if harness_dir is None:
         harness_dir = project_dir / CONFIG_DIR_NAME
 
-    config_file = harness_dir / CONFIG_FILE_NAME
+    config_file = harness_dir / "config.toml"
 
     if not config_file.exists():
         raise ConfigError(f"Config file not found: {config_file}")
@@ -472,21 +330,115 @@ def load_config(
         raise ConfigError(f"Failed to parse {config_file}: {e}") from e
 
     # Warn about unknown keys
-    _warn_unknown_keys(raw)
+    for key in raw:
+        if key not in _KNOWN_TOP_LEVEL_KEYS:
+            logger.warning(
+                "Unrecognized config key: %r (did you mean %s?)",
+                key,
+                ", ".join(sorted(_KNOWN_TOP_LEVEL_KEYS)),
+            )
 
     # Build config from TOML data
+    raw_tracking = raw.get("tracking", {})
+    raw_error = raw.get("error_recovery", {})
+    raw_security = raw.get("security", {})
+    raw_tools = raw.get("tools", {})
+
+    # Parse tools config
+    mcp_servers = {}
+    for name, server_data in raw_tools.get("mcp_servers", {}).items():
+        expanded_env = {}
+        for k, v in server_data.get("env", {}).items():
+            expanded = os.path.expandvars(v)
+            if expanded == v and "$" in v:
+                logger.warning(
+                    "MCP server '%s' env var '%s' may contain undefined variable: %s",
+                    name, k, v,
+                )
+            # Also warn when expansion produces empty string
+            if expanded != v and expanded == "":
+                logger.warning(
+                    "MCP server '%s' env var '%s' expanded to empty string: %s",
+                    name, k, v,
+                )
+            expanded_env[k] = expanded
+        mcp_servers[name] = McpServerConfig(
+            command=server_data.get("command", ""),
+            args=server_data.get("args", []),
+            env=expanded_env,
+        )
+
+    tools = ToolsConfig(
+        builtin=raw_tools.get("builtin", DEFAULT_BUILTIN_TOOLS.copy()),
+        mcp_servers=mcp_servers,
+    )
+
+    # Parse security config
+    sandbox_data = raw_security.get("sandbox", {})
+    sandbox = SandboxConfig(
+        enabled=sandbox_data.get("enabled", True),
+        auto_allow_bash_if_sandboxed=sandbox_data.get(
+            "auto_allow_bash_if_sandboxed", True
+        ),
+    )
+
+    bash = None
+    if "bash" in raw_security:
+        bash_data = raw_security["bash"]
+        bash = BashSecurityConfig(
+            allowed_commands=bash_data.get("allowed_commands", []),
+            extra_validators={
+                name: ExtraValidatorConfig(
+                    allowed_targets=vd.get("allowed_targets", []),
+                    allowed_modes=vd.get("allowed_modes", []),
+                )
+                for name, vd in bash_data.get("extra_validators", {}).items()
+            },
+        )
+
+    security = SecurityConfig(
+        permission_mode=raw_security.get("permission_mode", "acceptEdits"),
+        allowed_paths=raw_security.get("allowed_paths", ["./**"]),
+        sandbox=sandbox,
+        bash=bash,
+        mcp_tool_restrictions=raw_security.get("mcp", {}).get("tool_restrictions", {}),
+    )
+
     config = HarnessConfig(
         model=raw.get("model", DEFAULT_MODEL),
         system_prompt=raw.get("system_prompt", "You are a helpful coding assistant."),
         max_turns=raw.get("max_turns", 1000),
         max_iterations=raw.get("max_iterations"),
         auto_continue_delay=raw.get("auto_continue_delay", 3),
-        tools=_parse_tools(raw.get("tools", {})),
-        security=_parse_security(raw.get("security", {})),
-        tracking=_parse_tracking(raw.get("tracking", {})),
-        error_recovery=_parse_error_recovery(raw.get("error_recovery", {})),
-        phases=[_parse_phase(p) for p in raw.get("phases", [])],
-        init_files=[_parse_init_file(f) for f in raw.get("init_files", [])],
+        tools=tools,
+        security=security,
+        tracking=TrackingConfig(
+            type=raw_tracking.get("type", "none"),
+            file=raw_tracking.get("file", ""),
+            passing_field=raw_tracking.get("passing_field", "passes"),
+        ),
+        error_recovery=ErrorRecoveryConfig(
+            max_consecutive_errors=raw_error.get("max_consecutive_errors", 5),
+            initial_backoff_seconds=raw_error.get("initial_backoff_seconds", 5.0),
+            max_backoff_seconds=raw_error.get("max_backoff_seconds", 120.0),
+            backoff_multiplier=raw_error.get("backoff_multiplier", 2.0),
+        ),
+        phases=[
+            PhaseConfig(
+                name=p.get("name", ""),
+                prompt=p.get("prompt", ""),
+                run_once=p.get("run_once", False),
+                condition=p.get("condition", ""),
+            )
+            for p in raw.get("phases", [])
+        ],
+        init_files=[
+            InitFileConfig(
+                source=f.get("source", ""),
+                dest=f.get("dest", ""),
+            )
+            for f in raw.get("init_files", [])
+        ],
         post_run_instructions=raw.get("post_run_instructions", []),
         project_dir=project_dir,
         harness_dir=harness_dir,

@@ -12,8 +12,6 @@ import json
 from pathlib import Path
 from typing import Protocol
 
-from agent_harness.config import TrackingConfig
-
 
 class ProgressTracker(Protocol):
     """Protocol for progress trackers."""
@@ -47,27 +45,18 @@ class JsonChecklistTracker:
             return 0, 0
 
         try:
-            with open(self.file_path, "r") as f:
-                items = json.load(f)
+            items = json.loads(self.file_path.read_text())
             if not isinstance(items, list):
                 return 0, 0
-            total = len(items)
             passing = sum(
                 1 for item in items if isinstance(item, dict) and item.get(self.passing_field, False)
             )
-            return passing, total
+            return passing, len(items)
         except (json.JSONDecodeError, IOError):
             return 0, 0
 
     def is_initialized(self) -> bool:
-        if not self.file_path.exists():
-            return False
-        try:
-            with open(self.file_path, "r") as f:
-                items = json.load(f)
-            return isinstance(items, list) and len(items) > 0
-        except (json.JSONDecodeError, IOError):
-            return False
+        return self.get_summary()[1] > 0
 
     def is_complete(self) -> bool:
         passing, total = self.get_summary()
@@ -84,8 +73,6 @@ class JsonChecklistTracker:
 
 class NotesFileTracker:
     """Tracks progress via a plain text notes file."""
-
-    PREVIEW_LINES = 5
 
     def __init__(self, file_path: Path) -> None:
         self.file_path = file_path
@@ -104,8 +91,8 @@ class NotesFileTracker:
             content = self.file_path.read_text().strip()
             # Show first few lines as summary
             lines = content.split("\n")
-            preview = "\n".join(lines[:self.PREVIEW_LINES])
-            if len(lines) > self.PREVIEW_LINES:
+            preview = "\n".join(lines[:5])
+            if len(lines) > 5:
                 preview += f"\n  ... ({len(lines)} lines total)"
             print(f"\nProgress notes:\n{preview}")
         else:
@@ -126,24 +113,3 @@ class NoneTracker:
 
     def display_summary(self) -> None:
         pass
-
-
-def create_tracker(config: TrackingConfig, harness_dir: Path) -> ProgressTracker:
-    """Create the appropriate tracker from config.
-
-    Args:
-        config: Tracking configuration
-        harness_dir: Base directory for resolving relative file paths
-
-    Returns:
-        A ProgressTracker implementation
-    """
-    if config.type == "json_checklist":
-        return JsonChecklistTracker(
-            file_path=harness_dir / config.file,
-            passing_field=config.passing_field,
-        )
-    elif config.type == "notes_file":
-        return NotesFileTracker(file_path=harness_dir / config.file)
-    else:
-        return NoneTracker()

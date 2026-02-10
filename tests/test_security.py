@@ -17,7 +17,6 @@ from agent_harness.security import (
     create_bash_security_hook,
     create_mcp_tool_hook,
     extract_commands,
-    get_command_segment_pairs,
     split_command_segments,
     strip_balanced_parens,
     validate_chmod_command,
@@ -420,15 +419,6 @@ class TestSecurity(unittest.TestCase):
         segments = split_command_segments("((ls))")
         self.assertEqual(segments, ["ls"])
 
-    def test_get_command_segment_pairs_duplicate_commands(self) -> None:
-        """Test that duplicate command names get paired with their own segments."""
-        segments = split_command_segments("git status && git push --force")
-        pairs = get_command_segment_pairs(segments)
-        # Should produce two pairs, each with its own segment
-        self.assertEqual(len(pairs), 2)
-        self.assertEqual(pairs[0], ("git", "git status"))
-        self.assertEqual(pairs[1], ("git", "git push --force"))
-
     def test_duplicate_git_commands_blocked(self) -> None:
         """A compound command with safe git + destructive git must be blocked."""
         # This is the HIGH security bug: git status && git push --force
@@ -528,32 +518,6 @@ class TestSecurity(unittest.TestCase):
         for cmd in safe_pipes:
             with self.subTest(cmd=cmd):
                 self._assert_hook(cmd, "allow")
-
-    def test_get_command_segment_pairs_with_pipes(self) -> None:
-        """Test that get_command_segment_pairs splits on pipes correctly."""
-        # Test single pipe
-        segments = split_command_segments("git status | git push --force")
-        pairs = get_command_segment_pairs(segments)
-        # Should produce two pairs, each with its own segment
-        self.assertEqual(len(pairs), 2)
-        self.assertEqual(pairs[0], ("git", "git status"))
-        self.assertEqual(pairs[1], ("git", "git push --force"))
-
-        # Test multiple pipes
-        segments = split_command_segments("ls | grep test | wc -l")
-        pairs = get_command_segment_pairs(segments)
-        self.assertEqual(len(pairs), 3)
-        self.assertEqual(pairs[0], ("ls", "ls"))
-        self.assertEqual(pairs[1], ("grep", "grep test"))
-        self.assertEqual(pairs[2], ("wc", "wc -l"))
-
-        # Test || should not be split (it's logical OR, not a pipe)
-        segments = split_command_segments("git status || git init")
-        pairs = get_command_segment_pairs(segments)
-        self.assertEqual(len(pairs), 2)
-        # Both commands from different segments (split by ||)
-        self.assertEqual(pairs[0][0], "git")
-        self.assertEqual(pairs[1][0], "git")
 
     def test_git_push_force_with_lease_blocked(self) -> None:
         """git push --force-with-lease should be blocked."""

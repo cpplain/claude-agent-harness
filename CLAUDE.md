@@ -42,7 +42,6 @@ cli.py → config.py → runner.py → client_factory.py → Claude SDK
                          ↓               ↓
                     tracking.py     security.py
                     prompts.py
-                    display.py
 ```
 
 **cli.py** — Argument parsing for 3 subcommands: `run`, `verify`, `init`. Entry point via `python -m agent_harness`.
@@ -55,14 +54,14 @@ cli.py → config.py → runner.py → client_factory.py → Claude SDK
 
 **security.py** — Bash command validation via pre-tool-use hooks. Parses shell command strings (`extract_commands`, `split_command_segments`, `strip_balanced_parens`), validates against allowlists, and has special validators for `pkill`, `chmod`, `init.sh`, and `git` (blocks destructive operations like `push --force`, `reset --hard`).
 
-**tracking.py** — Progress monitoring with 3 implementations: `JsonChecklistTracker` (JSON array with boolean `passes` field), `NotesFileTracker` (plain text), `NoneTracker`. Created via `create_tracker()` factory.
+**tracking.py** — Progress monitoring with 3 implementations: `JsonChecklistTracker` (JSON array with boolean `passes` field), `NotesFileTracker` (plain text), `NoneTracker`.
 
 **verify.py** — Runs 11 setup checks (Python version, SDK installed, CLI available, auth, API connectivity, config validity, MCP commands, directory permissions).
 
 ## Key Patterns
 
 - **Dataclass-based config** — All configuration is modeled as nested dataclasses with defaults and validation functions in `config.py`.
-- **Factory functions** — `create_tracker()`, `create_client()`, `create_bash_security_hook()` encapsulate complex construction.
+- **Factory functions** — `create_client()`, `create_bash_security_hook()` encapsulate complex construction.
 - **Hook system** — Security validation runs as pre-tool-use hooks registered with the Claude SDK client. `create_bash_security_hook()` returns an async hook function that intercepts Bash tool calls.
 - **`file:` resolution** — Prompt strings starting with `file:` are resolved relative to the `.agent-harness/` directory and replaced with file contents during config loading.
 - **MCP environment variables** — MCP server `env` values support `${VAR}` syntax for environment variable expansion.

@@ -16,13 +16,10 @@ from typing import Optional
 
 from agent_harness.config import (
     CONFIG_DIR_NAME,
-    CONFIG_FILE_NAME,
     ConfigError,
     HarnessConfig,
     load_config,
 )
-
-VERIFY_MODEL = "claude-haiku-4-5-20251001"
 
 
 class CheckResult:
@@ -34,8 +31,7 @@ class CheckResult:
         self.message = message
 
     def __str__(self) -> str:
-        prefix = f"[{self.status}]"
-        line = f"  {prefix:8s} {self.name}"
+        line = f"  {f'[{self.status}]':8s} {self.name}"
         if self.message:
             line += f" - {self.message}"
         return line
@@ -79,7 +75,7 @@ def check_api_connectivity() -> CheckResult:
         async def _check() -> str:
             text_parts: list[str] = []
             async with ClaudeSDKClient(
-                options=ClaudeAgentOptions(model=VERIFY_MODEL),
+                options=ClaudeAgentOptions(model="claude-haiku-4-5-20251001"),
             ) as client:
                 await client.query("Reply with only the word OK")
                 async for msg in client.receive_response():
@@ -106,8 +102,7 @@ def check_api_connectivity() -> CheckResult:
     except asyncio.TimeoutError:
         return CheckResult("API connectivity", "FAIL", "Timed out after 30s")
     except Exception as e:
-        error_msg = str(e)[:100]
-        return CheckResult("API connectivity", "FAIL", error_msg)
+        return CheckResult("API connectivity", "FAIL", str(e)[:100])
 
 
 def check_sdk_installed() -> CheckResult:
@@ -157,7 +152,7 @@ def check_claude_cli() -> CheckResult:
 
 def check_config_exists(harness_dir: Path) -> CheckResult:
     """Check that config.toml exists."""
-    config_file = harness_dir / CONFIG_FILE_NAME
+    config_file = harness_dir / "config.toml"
     if config_file.exists():
         return CheckResult("Config file", "PASS", str(config_file))
     return CheckResult("Config file", "FAIL", f"Not found: {config_file}")
@@ -293,33 +288,3 @@ def run_verify(project_dir: Path, harness_dir: Optional[Path] = None) -> list[Ch
         results.append(check_project_dir(project_dir))
 
     return results
-
-
-def print_verify_results(results: list[CheckResult]) -> bool:
-    """Print verification results and return True if all passed.
-
-    Returns:
-        True if no FAIL results
-    """
-    print("\nVerification Results:")
-    print("-" * 50)
-
-    for result in results:
-        print(result)
-
-    print("-" * 50)
-
-    fails = sum(1 for r in results if r.status == "FAIL")
-    warns = sum(1 for r in results if r.status == "WARN")
-    passes = sum(1 for r in results if r.status == "PASS")
-
-    print(f"\n  {passes} passed, {warns} warnings, {fails} failed")
-
-    if fails > 0:
-        print("\n  Fix the FAIL items above before running the agent.")
-        return False
-
-    if warns > 0:
-        print("\n  Warnings are non-blocking but may cause issues.")
-
-    return True

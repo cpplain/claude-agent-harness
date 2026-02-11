@@ -49,13 +49,18 @@ allowed_paths = ["./**"]
 [security.sandbox]
 enabled = true
 auto_allow_bash_if_sandboxed = true
+allow_unsandboxed_commands = false
 
-# Omit [security.bash] for no bash security hook (sandbox handles it)
-# [security.bash]
-# allowed_commands = ["ls", "cat", "npm", "node", "git"]
-#
-# [security.bash.extra_validators.pkill]
-# allowed_targets = ["node", "npm"]
+[security.sandbox.network]
+allowed_domains = ["registry.npmjs.org", "github.com"]
+allow_local_binding = false
+
+[security.permissions]
+allow = [
+    "Bash(npm *)", "Bash(node *)", "Bash(git *)",
+    "Bash(ls *)", "Bash(cat *)",
+]
+deny = ["Bash(curl *)", "Bash(wget *)"]
 
 # --- Progress Tracking ---
 [tracking]

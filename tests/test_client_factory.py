@@ -13,9 +13,10 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch, MagicMock
 
 from agent_harness.config import (
-    BashSecurityConfig,
     HarnessConfig,
     McpServerConfig,
+    PermissionRulesConfig,
+    SandboxConfig,
     SecurityConfig,
     ToolsConfig,
 )
@@ -36,8 +37,10 @@ class TestWriteSettings(unittest.TestCase):
             settings_file = _write_settings(config)
             self.assertTrue(settings_file.exists())
             data = json.loads(settings_file.read_text())
-            self.assertIn("sandbox", data)
+            # Settings file now only contains permissions
             self.assertIn("permissions", data)
+            self.assertIn("allow", data["permissions"])
+            self.assertIn("deny", data["permissions"])
 
     def test_writes_to_config_dir(self) -> None:
         with TemporaryDirectory() as tmpdir:
@@ -105,30 +108,23 @@ class TestCreateClient(unittest.TestCase):
 
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test-key"})
     @patch("agent_harness.client_factory.ClaudeSDKClient")
-    def test_bash_hook_installed_when_configured(self, mock_client_cls: MagicMock) -> None:
+    def test_permission_mode_passed_on_options(self, mock_client_cls: MagicMock) -> None:
         with TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir) / ".agent-harness"
             config_dir.mkdir()
             config = HarnessConfig(
                 harness_dir=config_dir,
                 project_dir=Path(tmpdir),
-                security=SecurityConfig(
-                    bash=BashSecurityConfig(
-                        allowed_commands=["ls", "cat"],
-                        extra_validators={},
-                    )
-                ),
+                security=SecurityConfig(permission_mode="plan"),
             )
             create_client(config)
             call_kwargs = mock_client_cls.call_args
             options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
-            # The options should have hooks
-            self.assertIsNotNone(options.hooks)
-            self.assertIn("PreToolUse", options.hooks)
+            self.assertEqual(options.permission_mode, "plan")
 
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test-key"})
     @patch("agent_harness.client_factory.ClaudeSDKClient")
-    def test_no_bash_hook_when_not_configured(self, mock_client_cls: MagicMock) -> None:
+    def test_sandbox_passed_on_options(self, mock_client_cls: MagicMock) -> None:
         with TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir) / ".agent-harness"
             config_dir.mkdir()
@@ -139,8 +135,25 @@ class TestCreateClient(unittest.TestCase):
             create_client(config)
             call_kwargs = mock_client_cls.call_args
             options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
-            # No hooks should be set
-            self.assertFalse(hasattr(options, "hooks") and options.hooks)
+            # Sandbox should be passed as dict
+            self.assertIsNotNone(options.sandbox)
+            self.assertIsInstance(options.sandbox, dict)
+            self.assertTrue(options.sandbox["enabled"])
+
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test-key"})
+    @patch("agent_harness.client_factory.ClaudeSDKClient")
+    def test_allow_unsandboxed_commands_defaults_to_false(self, mock_client_cls: MagicMock) -> None:
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            config = HarnessConfig(
+                harness_dir=config_dir,
+                project_dir=Path(tmpdir),
+            )
+            create_client(config)
+            call_kwargs = mock_client_cls.call_args
+            options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
+            self.assertFalse(options.sandbox["allowUnsandboxedCommands"])
 
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test-key"})
     @patch("agent_harness.client_factory.ClaudeSDKClient")

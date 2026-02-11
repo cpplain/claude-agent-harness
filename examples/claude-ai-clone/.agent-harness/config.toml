@@ -25,23 +25,23 @@ allowed_paths = ["./**"]
 [security.sandbox]
 enabled = true
 auto_allow_bash_if_sandboxed = true
+allow_unsandboxed_commands = false
 
-[security.bash]
-allowed_commands = [
-    "ls", "cat", "head", "tail", "wc", "grep",
-    "cp", "mkdir", "chmod",
-    "pwd",
-    "npm", "node",
-    "git",
-    "ps", "lsof", "sleep", "pkill",
-    "init.sh",
+[security.sandbox.network]
+allowed_domains = ["registry.npmjs.org", "github.com"]
+allow_local_binding = true
+
+[security.permissions]
+allow = [
+    "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(grep *)",
+    "Bash(cp *)", "Bash(mkdir *)", "Bash(chmod *)",
+    "Bash(pwd)", "Bash(ps *)", "Bash(lsof *)", "Bash(sleep *)", "Bash(pkill *)",
+    "Bash(npm *)", "Bash(node *)", "Bash(git *)",
+    "Bash(./init.sh)",
 ]
-
-[security.bash.extra_validators.pkill]
-allowed_targets = ["node", "npm", "npx", "vite", "next"]
-
-[security.bash.extra_validators.chmod]
-allowed_modes = ["+x", "u+x", "a+x"]
+deny = [
+    "Bash(curl *)", "Bash(wget *)",
+]
 
 # --- Progress Tracking ---
 [tracking]

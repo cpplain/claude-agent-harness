@@ -48,7 +48,9 @@ class TestConfigDefaults(unittest.TestCase):
         config = HarnessConfig()
         self.assertEqual(config.security.permission_mode, "acceptEdits")
         self.assertTrue(config.security.sandbox.enabled)
-        self.assertIsNone(config.security.bash)
+        self.assertFalse(config.security.sandbox.allow_unsandboxed_commands)
+        self.assertEqual(config.security.permissions.allow, [])
+        self.assertEqual(config.security.permissions.deny, [])
 
     def test_default_tracking(self) -> None:
         config = HarnessConfig()
@@ -206,31 +208,49 @@ args = ["puppeteer-mcp-server"]
             self.assertIn("puppeteer", config.tools.mcp_servers)
             self.assertEqual(config.tools.mcp_servers["puppeteer"].command, "npx")
 
-    def test_bash_security_config(self) -> None:
+    def test_sandbox_config_with_network(self) -> None:
         with TemporaryDirectory() as tmpdir:
             toml_content = """
-[security.bash]
-allowed_commands = ["ls", "cat", "npm"]
+[security.sandbox]
+enabled = true
+allow_unsandboxed_commands = false
+excluded_commands = ["curl", "wget"]
 
-[security.bash.extra_validators.pkill]
-allowed_targets = ["node", "npm"]
+[security.sandbox.network]
+allowed_domains = ["github.com", "npmjs.org"]
+allow_local_binding = true
+allow_unix_sockets = ["/var/run/docker.sock"]
 """
             project_dir = self._write_config(tmpdir, toml_content)
             config = load_config(project_dir)
-            self.assertIsNotNone(config.security.bash)
-            assert config.security.bash is not None
-            self.assertEqual(config.security.bash.allowed_commands, ["ls", "cat", "npm"])
-            self.assertIn("pkill", config.security.bash.extra_validators)
-            self.assertEqual(
-                config.security.bash.extra_validators["pkill"].allowed_targets,
-                ["node", "npm"],
-            )
+            self.assertTrue(config.security.sandbox.enabled)
+            self.assertFalse(config.security.sandbox.allow_unsandboxed_commands)
+            self.assertEqual(config.security.sandbox.excluded_commands, ["curl", "wget"])
+            self.assertEqual(config.security.sandbox.network.allowed_domains, ["github.com", "npmjs.org"])
+            self.assertTrue(config.security.sandbox.network.allow_local_binding)
+            self.assertEqual(config.security.sandbox.network.allow_unix_sockets, ["/var/run/docker.sock"])
 
-    def test_no_bash_section_means_no_hook(self) -> None:
+    def test_permissions_config(self) -> None:
         with TemporaryDirectory() as tmpdir:
-            project_dir = self._write_config(tmpdir, "")
+            toml_content = """
+[security.permissions]
+allow = ["Bash(npm *)", "Bash(git *)"]
+deny = ["Bash(curl *)", "Read(./.env)"]
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
             config = load_config(project_dir)
-            self.assertIsNone(config.security.bash)
+            self.assertEqual(config.security.permissions.allow, ["Bash(npm *)", "Bash(git *)"])
+            self.assertEqual(config.security.permissions.deny, ["Bash(curl *)", "Read(./.env)"])
+
+    def test_default_permission_mode_accepted(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[security]
+permission_mode = "default"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            config = load_config(project_dir)
+            self.assertEqual(config.security.permission_mode, "default")
 
     def test_tracking_config(self) -> None:
         with TemporaryDirectory() as tmpdir:

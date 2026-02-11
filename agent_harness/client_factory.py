@@ -3,7 +3,7 @@ Client Factory
 ==============
 
 Builds ClaudeSDKClient from HarnessConfig.
-Generates security settings, installs hooks, configures MCP servers.
+Passes sandbox and permission settings directly to SDK.
 """
 
 from __future__ import annotations
@@ -15,39 +15,22 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
 from agent_harness.config import HarnessConfig
-from agent_harness.security import create_bash_security_hook, create_mcp_tool_hook
 
 
 def _write_settings(config: HarnessConfig) -> Path:
     """Write .claude_settings.json to .agent-harness/ and return the path.
 
     Only writes if the content has changed to avoid unnecessary file writes.
+    Settings file now contains only permission rules (allow/deny).
     """
-    # Build permission rules
-    rules = []
-    for tool in config.tools.builtin:
-        if tool in {"Read", "Write", "Edit", "Glob", "Grep"}:
-            for path_pattern in config.security.allowed_paths:
-                rules.append(f"{tool}({path_pattern})")
-        elif tool == "Bash":
-            rules.append("Bash(*)")
-        else:
-            rules.append(tool)
-    for server_name in config.tools.mcp_servers:
-        rules.append(f"mcp__{server_name}__*")
-
-    # Build settings dict
+    # Build settings dict with only permission rules
     settings = {
-        "sandbox": {
-            "enabled": config.security.sandbox.enabled,
-            "autoAllowBashIfSandboxed": config.security.sandbox.auto_allow_bash_if_sandboxed,
-        },
         "permissions": {
-            "defaultMode": config.security.permission_mode,
-            "allow": rules,
+            "allow": config.security.permissions.allow.copy(),
+            "deny": config.security.permissions.deny.copy(),
         },
     }
 
@@ -120,38 +103,30 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
     # Write settings file
     settings_file = _write_settings(config)
 
-    # Build hooks
-    hook_matchers = []
-
-    if config.security.bash is not None:
-        hook_matchers.append(HookMatcher(
-            matcher="Bash", hooks=[create_bash_security_hook(config.security.bash)],
-        ))
-
-    for tool_name, restrictions in config.security.mcp_tool_restrictions.items():
-        hook_matchers.append(HookMatcher(
-            matcher=tool_name, hooks=[create_mcp_tool_hook(tool_name, restrictions)],
-        ))
-
-    hooks = {"PreToolUse": hook_matchers} if hook_matchers else None
-
     # Build MCP servers
     mcp_servers = {
         name: {"command": sc.command, "args": sc.args, **({"env": sc.env} if sc.env else {})}
         for name, sc in config.tools.mcp_servers.items()
     }
 
+    # Build sandbox settings dict for SDK
+    sandbox_settings = {
+        "enabled": config.security.sandbox.enabled,
+        "autoAllowBashIfSandboxed": config.security.sandbox.auto_allow_bash_if_sandboxed,
+        "allowUnsandboxedCommands": config.security.sandbox.allow_unsandboxed_commands,
+        "excludedCommands": config.security.sandbox.excluded_commands,
+        "network": {
+            "allowedDomains": config.security.sandbox.network.allowed_domains,
+            "allowLocalBinding": config.security.sandbox.network.allow_local_binding,
+            "allowUnixSockets": config.security.sandbox.network.allow_unix_sockets,
+        },
+    }
+
     # Log setup summary
     logger.info("Settings written to %s", settings_file)
     logger.info("   - Sandbox %s", "enabled" if config.security.sandbox.enabled else "disabled")
+    logger.info("   - Permission mode: %s", config.security.permission_mode)
     logger.info("   - Working directory: %s", config.project_dir.resolve())
-    if config.security.bash is not None:
-        logger.info("   - Bash commands restricted to allowlist (%d commands)", len(config.security.bash.allowed_commands))
-    else:
-        if config.security.sandbox.enabled:
-            logger.info("   - No bash security hook (sandbox handles security)")
-        else:
-            logger.info("   - No bash security hook (no bash restrictions configured)")
     if mcp_servers:
         logger.info("   - MCP servers: %s", ", ".join(mcp_servers.keys()))
 
@@ -164,6 +139,7 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
         settings=str(settings_file.resolve()),
         env=auth_env,
         mcp_servers=mcp_servers,
-        hooks=hooks,
+        permission_mode=config.security.permission_mode,
+        sandbox=sandbox_settings,
     )
     return ClaudeSDKClient(options=options)

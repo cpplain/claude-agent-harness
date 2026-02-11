@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Agent Harness is a configurable harness for long-running autonomous coding agents built on the Claude Agent SDK. It enables multi-phase agent execution with security hooks, error recovery, progress tracking, and MCP server integration. Configuration is driven entirely by `.agent-harness/config.toml`.
+Agent Harness is a configurable harness for long-running autonomous coding agents built on the Claude Agent SDK. It enables multi-phase agent execution with SDK-native sandbox isolation, error recovery, progress tracking, and MCP server integration. Configuration is driven entirely by `.agent-harness/config.toml`.
 
 ## Commands
 
@@ -18,10 +18,10 @@ uv sync
 uv run python -m unittest discover tests -v
 
 # Run a single test module
-uv run python -m unittest tests.test_security -v
+uv run python -m unittest tests.test_config -v
 
 # Run a single test
-uv run python -m unittest tests.test_security.TestSecurity.test_extract_commands -v
+uv run python -m unittest tests.test_config.TestConfigDefaults.test_default_model -v
 
 # Run the agent
 uv run python -m agent_harness run --project-dir ./my-project
@@ -39,8 +39,8 @@ The system runs an async loop that executes **phases** sequentially. Each phase 
 
 ```
 cli.py → config.py → runner.py → client_factory.py → Claude SDK
-                         ↓               ↓
-                    tracking.py     security.py
+                         ↓
+                    tracking.py
                     prompts.py
 ```
 
@@ -50,9 +50,7 @@ cli.py → config.py → runner.py → client_factory.py → Claude SDK
 
 **runner.py** — Main async agent loop. Manages phase selection, session state persistence, error tracking with exponential backoff, and auto-continue between sessions. Calls `create_client()` for each session.
 
-**client_factory.py** — Creates `ClaudeSDKClient` with permission rules, settings files, pre-tool-use security hooks, and MCP server configuration. Handles API key vs OAuth token auth.
-
-**security.py** — Bash command validation via pre-tool-use hooks. Parses shell command strings (`extract_commands`, `split_command_segments`, `strip_balanced_parens`), validates against allowlists, and has special validators for `pkill`, `chmod`, `init.sh`, and `git` (blocks destructive operations like `push --force`, `reset --hard`).
+**client_factory.py** — Creates `ClaudeSDKClient` by passing sandbox settings and permission mode directly to the SDK. Generates minimal settings file with permission rules (allow/deny lists). Handles API key vs OAuth token auth.
 
 **tracking.py** — Progress monitoring with 3 implementations: `JsonChecklistTracker` (JSON array with boolean `passes` field), `NotesFileTracker` (plain text), `NoneTracker`.
 
@@ -61,8 +59,8 @@ cli.py → config.py → runner.py → client_factory.py → Claude SDK
 ## Key Patterns
 
 - **Dataclass-based config** — All configuration is modeled as nested dataclasses with defaults and validation functions in `config.py`.
-- **Factory functions** — `create_client()`, `create_bash_security_hook()` encapsulate complex construction.
-- **Hook system** — Security validation runs as pre-tool-use hooks registered with the Claude SDK client. `create_bash_security_hook()` returns an async hook function that intercepts Bash tool calls.
+- **Factory functions** — `create_client()` encapsulates SDK client construction with sandbox and permission configuration.
+- **SDK-native security** — Security is enforced through the Claude SDK's built-in sandbox (process isolation, network restrictions) and declarative permission rules (allow/deny lists), not application-layer hooks.
 - **`file:` resolution** — Prompt strings starting with `file:` are resolved relative to the `.agent-harness/` directory and replaced with file contents during config loading.
 - **MCP environment variables** — MCP server `env` values support `${VAR}` syntax for environment variable expansion.
 

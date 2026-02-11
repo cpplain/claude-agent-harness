@@ -583,6 +583,8 @@ If a session truly hangs:
 
 5. **Fresh context per session**: Each session starts with a clean context window, preventing context pollution and allowing unlimited total work.
 
+6. **SDK-first**: Delegate to the Claude Agent SDK for security enforcement, sandboxing, permission evaluation, and tool management. Only add custom code for domain-specific validation and orchestration.
+
 ## Running Tests
 
 ```bash

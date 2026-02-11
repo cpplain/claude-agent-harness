@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Agent Harness is a configurable harness for long-running autonomous coding agents built on the Claude Agent SDK. It enables multi-phase agent execution with security hooks, error recovery, progress tracking, and MCP server integration. Configuration is driven entirely by `.agent-harness/config.toml`.
+Agent Harness is a thin configuration layer over the Claude Agent SDK. It translates TOML config into SDK parameters and adds domain-specific PreToolUse hooks for bash/MCP validation. All security enforcement, sandboxing, permission evaluation, and tool management are delegated to the SDK. Configuration is driven entirely by `.agent-harness/config.toml`.
 
 ## Commands
 
@@ -65,6 +65,41 @@ cli.py → config.py → runner.py → client_factory.py → Claude SDK
 - **Hook system** — Security validation runs as pre-tool-use hooks registered with the Claude SDK client. `create_bash_security_hook()` returns an async hook function that intercepts Bash tool calls.
 - **`file:` resolution** — Prompt strings starting with `file:` are resolved relative to the `.agent-harness/` directory and replaced with file contents during config loading.
 - **MCP environment variables** — MCP server `env` values support `${VAR}` syntax for environment variable expansion.
+
+## SDK-First Development Rules
+
+The harness is a thin configuration layer over the SDK. These rules prevent reimplementing SDK capabilities:
+
+**Mandatory Rules:**
+
+1. **Never reimplement SDK security primitives** — Sandbox isolation, permission evaluation, and tool permission rules are SDK responsibilities. Do not build custom implementations.
+2. **Pass SDK parameters directly** — Use `ClaudeAgentOptions` fields rather than routing through settings files or custom wrappers.
+3. **Match SDK type signatures exactly** — Hook callbacks must match `HookCallback` signature from the SDK.
+4. **Consume SDK outputs when available** — Use `ResultMessage` cost/usage data rather than custom tracking.
+
+**Prohibited Patterns:**
+
+- Custom shell command parsing beyond simple allowlist lookup
+- Custom permission evaluation logic
+- Reimplementing MCP server lifecycle management
+- Building custom tool execution wrappers
+
+**Appropriate Custom Code:**
+
+- Domain-specific PreToolUse hook validation (pkill targets, chmod modes, git destructive ops)
+- Orchestration (phase selection, session state, progress tracking, error recovery)
+- Configuration translation (TOML to SDK parameters)
+
+**Before Writing New Code:**
+
+Check `ClaudeAgentOptions` in the installed SDK (`claude_agent_sdk/types.py`) for existing support. Consult Anthropic's published guides (linked below) for recommended patterns.
+
+**References:**
+
+- [Claude Agent SDK docs](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/sdk)
+- [Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+- [Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+- [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing)
 
 ## Dependencies
 

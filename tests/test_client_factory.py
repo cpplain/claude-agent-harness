@@ -53,6 +53,12 @@ class TestCreateClient(unittest.TestCase):
             create_client(config)
             mock_client_cls.assert_called_once()
 
+            # Verify default options are passed
+            call_kwargs = mock_client_cls.call_args
+            options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
+            self.assertEqual(options.permission_mode, "acceptEdits")
+            self.assertTrue(options.sandbox["enabled"])
+
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test-key"})
     @patch("agent_harness.client_factory.ClaudeSDKClient")
     def test_permission_mode_passed_on_options(self, mock_client_cls: MagicMock) -> None:
@@ -124,6 +130,22 @@ class TestCreateClient(unittest.TestCase):
             options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
             self.assertIsNotNone(options.mcp_servers)
             self.assertIn("puppeteer", options.mcp_servers)
+
+    @patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "oauth-token-test"})
+    @patch("agent_harness.client_factory.ClaudeSDKClient")
+    def test_oauth_token_creates_client(self, mock_client_cls: MagicMock) -> None:
+        """Test that OAuth token authentication works."""
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            config = HarnessConfig(
+                harness_dir=config_dir,
+                project_dir=Path(tmpdir),
+            )
+            # Remove API key to ensure we're testing OAuth
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+            create_client(config)
+            mock_client_cls.assert_called_once()
 
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test-key"})
     @patch("agent_harness.client_factory.ClaudeSDKClient")

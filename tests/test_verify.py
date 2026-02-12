@@ -264,6 +264,16 @@ class TestRunVerify(unittest.TestCase):
             # Should have at least the basic checks
             self.assertGreater(len(results), 4)
 
+            # Verify specific check names are present
+            check_names = [result.name for result in results]
+            self.assertIn("Config file", check_names)
+            self.assertIn("Config validation", check_names)
+            self.assertIn("Python version", check_names)
+
+            # Verify at least the "Config file" check passes
+            config_file_result = next(r for r in results if r.name == "Config file")
+            self.assertEqual(config_file_result.status, "PASS")
+
 
 if __name__ == "__main__":
     unittest.main()

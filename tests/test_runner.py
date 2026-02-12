@@ -16,6 +16,7 @@ from agent_harness.config import ErrorRecoveryConfig, HarnessConfig, PhaseConfig
 from agent_harness.runner import (
     _load_session_state,
     _save_session_state,
+    calculate_backoff,
     evaluate_condition,
     run_agent_session,
     select_phase,
@@ -432,14 +433,10 @@ class TestBackoffCalculation(unittest.TestCase):
         )
 
         # Calculate backoff for consecutive errors 1-5
-        backoffs = []
-        for consecutive_errors in range(1, 6):
-            backoff = min(
-                error_recovery.initial_backoff_seconds *
-                (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
-                error_recovery.max_backoff_seconds
-            )
-            backoffs.append(backoff)
+        backoffs = [
+            calculate_backoff(error_recovery, consecutive_errors)
+            for consecutive_errors in range(1, 6)
+        ]
 
         # Verify exponential progression
         self.assertEqual(backoffs, [5.0, 10.0, 20.0, 40.0, 80.0])
@@ -453,14 +450,10 @@ class TestBackoffCalculation(unittest.TestCase):
         )
 
         # Calculate backoff for many consecutive errors
-        backoffs = []
-        for consecutive_errors in range(1, 8):
-            backoff = min(
-                error_recovery.initial_backoff_seconds *
-                (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
-                error_recovery.max_backoff_seconds
-            )
-            backoffs.append(backoff)
+        backoffs = [
+            calculate_backoff(error_recovery, consecutive_errors)
+            for consecutive_errors in range(1, 8)
+        ]
 
         # Verify capping at 60.0
         self.assertEqual(backoffs, [5.0, 10.0, 20.0, 40.0, 60.0, 60.0, 60.0])
@@ -493,14 +486,10 @@ class TestBackoffCalculation(unittest.TestCase):
         )
 
         # Calculate backoff for consecutive errors 1-4
-        backoffs = []
-        for consecutive_errors in range(1, 5):
-            backoff = min(
-                error_recovery.initial_backoff_seconds *
-                (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
-                error_recovery.max_backoff_seconds
-            )
-            backoffs.append(backoff)
+        backoffs = [
+            calculate_backoff(error_recovery, consecutive_errors)
+            for consecutive_errors in range(1, 5)
+        ]
 
         # Verify 3x progression
         self.assertEqual(backoffs, [2.0, 6.0, 18.0, 54.0])

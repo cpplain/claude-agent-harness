@@ -5,6 +5,8 @@ Configuration Tests
 Tests for config loading, validation, defaults, and file: resolution.
 """
 
+import logging
+import logging.handlers
 import os
 import unittest
 from pathlib import Path
@@ -839,10 +841,25 @@ max_turns = 500
 auto_continue_delay = 5
 """
             project_dir = self._write_config(tmpdir, toml_content)
-            # Use a custom logger to check no warnings
-            with self.assertRaises(AssertionError):
-                with self.assertLogs("agent_harness.config", level=logging.WARNING):
-                    load_config(project_dir)
+            # Capture logs and check for warnings
+            # Using logging.INFO since config module might not emit DEBUG logs
+            handler = logging.handlers.MemoryHandler(capacity=100)
+            logger = logging.getLogger("agent_harness.config")
+            original_level = logger.level
+            logger.setLevel(logging.DEBUG)
+            logger.addHandler(handler)
+            try:
+                load_config(project_dir)
+                handler.flush()
+                # Verify no WARNING messages were logged
+                warning_logs = [
+                    record for record in handler.buffer
+                    if record.levelno >= logging.WARNING
+                ]
+                self.assertEqual(len(warning_logs), 0)
+            finally:
+                logger.removeHandler(handler)
+                logger.setLevel(original_level)
 
 
 class TestAdditionalValidation(unittest.TestCase):

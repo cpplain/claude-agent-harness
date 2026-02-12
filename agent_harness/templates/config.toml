@@ -1,9 +1,7 @@
 # Agent Harness Configuration
 #
-# This file configures the autonomous agent harness. All settings are optional
-# unless marked as required. See the config.py dataclasses for complete defaults.
-#
-# For full documentation, see: https://github.com/anthropics/claude-agent-harness
+# This file configures the autonomous agent harness. All settings have sensible
+# defaults shown below. Settings marked "required" must be provided when used.
 
 # =============================================================================
 # Agent Settings

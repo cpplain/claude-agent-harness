@@ -238,14 +238,6 @@ Permission rules are evaluated by the SDK before tool execution. The agent canno
 
 For production deployments, protect critical branches using **server-side git hooks or branch protection rules** on your git hosting platform (GitHub, GitLab, Bitbucket), not client-side validation. This prevents destructive operations like `git push --force` at the source.
 
-### OAuth Token Validation
-
-The harness validates OAuth tokens before use, checking for:
-
-- Embedded whitespace (spaces, newlines, carriage returns)
-- Copy/paste corruption from clipboard
-- Provides helpful error messages with debugging info
-
 ## Configuration
 
 Configuration lives in `.agent-harness/config.toml`. See the [example config](examples/claude-ai-clone/.agent-harness/config.toml) for a complete reference.
@@ -601,7 +593,7 @@ python -m unittest tests.test_client_factory -v # Client creation
 
 Test coverage includes:
 
-- **Security configuration**: Sandbox settings, permission rules, network isolation, OAuth token validation
+- **Security configuration**: Sandbox settings, permission rules, network isolation
 - **Configuration loading**: TOML parsing, defaults, validation, error cases
 - **Progress tracking**: Completion detection, JSON parsing, print formatting
 - **Prompt loading**: File reading, `file:` resolution, error handling

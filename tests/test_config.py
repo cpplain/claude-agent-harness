@@ -838,12 +838,12 @@ auto_continue_delay = 5
             project_dir = self._write_config(tmpdir, toml_content)
             # Capture logs and check for warnings
             # Using logging.INFO since config module might not emit DEBUG logs
-            handler = logging.handlers.MemoryHandler(capacity=100)
             logger = logging.getLogger("agent_harness.config")
             original_level = logger.level
-            logger.setLevel(logging.DEBUG)
-            logger.addHandler(handler)
             try:
+                handler = logging.handlers.MemoryHandler(capacity=100)
+                logger.setLevel(logging.DEBUG)
+                logger.addHandler(handler)
                 load_config(project_dir)
                 handler.flush()
                 # Verify no WARNING messages were logged

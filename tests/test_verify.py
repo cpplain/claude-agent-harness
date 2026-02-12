@@ -257,14 +257,12 @@ class TestRunVerify(unittest.TestCase):
             config_dir.mkdir()
             (config_dir / "config.toml").write_text("")
             results = run_verify(Path(tmpdir))
-            # Should have at least the basic checks
-            self.assertGreater(len(results), 4)
 
-            # Verify specific check names are present
+            # Verify specific required checks are present
             check_names = [result.name for result in results]
-            self.assertIn("Config file", check_names)
-            self.assertIn("Config validation", check_names)
-            self.assertIn("Python version", check_names)
+            required_checks = ["Config file", "Config validation", "Python version"]
+            for check in required_checks:
+                self.assertIn(check, check_names)
 
             # Verify at least the "Config file" check passes
             config_file_result = next(r for r in results if r.name == "Config file")

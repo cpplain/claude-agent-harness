@@ -241,38 +241,23 @@ class TestSessionState(unittest.TestCase):
                 _load_session_state(config)
             self.assertTrue(any("Corrupt session state" in msg for msg in cm.output))
 
-    def test_load_non_dict_json_array(self) -> None:
-        """Test that JSON arrays are treated as corrupt."""
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir(parents=True)
-            (config_dir / "session.json").write_text('[1, 2, 3]')
-            config = HarnessConfig(harness_dir=config_dir)
-            state = _load_session_state(config)
-            self.assertEqual(state["session_number"], 0)
-            self.assertEqual(state["completed_phases"], [])
-
-    def test_load_non_dict_json_string(self) -> None:
-        """Test that JSON strings are treated as corrupt."""
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir(parents=True)
-            (config_dir / "session.json").write_text('"just a string"')
-            config = HarnessConfig(harness_dir=config_dir)
-            state = _load_session_state(config)
-            self.assertEqual(state["session_number"], 0)
-            self.assertEqual(state["completed_phases"], [])
-
-    def test_load_non_dict_json_number(self) -> None:
-        """Test that JSON numbers are treated as corrupt."""
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir(parents=True)
-            (config_dir / "session.json").write_text('42')
-            config = HarnessConfig(harness_dir=config_dir)
-            state = _load_session_state(config)
-            self.assertEqual(state["session_number"], 0)
-            self.assertEqual(state["completed_phases"], [])
+    def test_load_non_dict_json_types(self) -> None:
+        """Test that non-dict JSON types (array, string, number) are treated as corrupt."""
+        test_cases = [
+            ('[1, 2, 3]', "array"),
+            ('"just a string"', "string"),
+            ('42', "number"),
+        ]
+        for json_content, type_name in test_cases:
+            with self.subTest(type=type_name):
+                with TemporaryDirectory() as tmpdir:
+                    config_dir = Path(tmpdir) / ".agent-harness"
+                    config_dir.mkdir(parents=True)
+                    (config_dir / "session.json").write_text(json_content)
+                    config = HarnessConfig(harness_dir=config_dir)
+                    state = _load_session_state(config)
+                    self.assertEqual(state["session_number"], 0)
+                    self.assertEqual(state["completed_phases"], [])
 
     def test_load_non_dict_json_logs_warning(self) -> None:
         """Test that non-dict JSON logs a warning."""
@@ -535,29 +520,19 @@ class TestRunAgentSession(unittest.TestCase):
 class TestNarrowExceptionHandler(unittest.TestCase):
     """Test narrowed exception handler (B2)."""
 
-    def test_type_error_propagates(self) -> None:
-        """Test that TypeError is not caught (programming error)."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=TypeError("Bad type"))
-
-        with self.assertRaises(TypeError):
-            asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-    def test_attribute_error_propagates(self) -> None:
-        """Test that AttributeError is not caught (programming error)."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=AttributeError("No attribute"))
-
-        with self.assertRaises(AttributeError):
-            asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-    def test_key_error_propagates(self) -> None:
-        """Test that KeyError is not caught (programming error)."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=KeyError("missing_key"))
-
-        with self.assertRaises(KeyError):
-            asyncio.run(run_agent_session(mock_client, "test prompt"))
+    def test_programming_errors_propagate(self) -> None:
+        """Test that programming errors (TypeError, AttributeError, KeyError) are not caught."""
+        error_cases = [
+            (TypeError, "Bad type"),
+            (AttributeError, "No attribute"),
+            (KeyError, "missing_key"),
+        ]
+        for error_class, message in error_cases:
+            with self.subTest(error=error_class.__name__):
+                mock_client = MagicMock()
+                mock_client.query = AsyncMock(side_effect=error_class(message))
+                with self.assertRaises(error_class):
+                    asyncio.run(run_agent_session(mock_client, "test prompt"))
 
     def test_runtime_error_caught(self) -> None:
         """Test that RuntimeError is caught and returns error status."""

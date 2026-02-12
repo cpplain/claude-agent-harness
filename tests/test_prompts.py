@@ -106,7 +106,9 @@ class TestCopyInitFiles(unittest.TestCase):
                 harness_dir=Path(tmpdir),
                 init_files=[],
             )
-            copy_init_files(config)  # Should not raise
+            copy_init_files(config)
+            # Verify no files were created (only the tmpdir itself exists)
+            self.assertEqual(list(Path(tmpdir).iterdir()), [])
 
     def test_copy_init_files_missing_source_skips(self) -> None:
         """Missing source file should log warning and continue."""

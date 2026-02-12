@@ -63,25 +63,6 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
 
-    # Validate OAuth token if present
-    if oauth_token:
-        oauth_token = oauth_token.strip()
-        if not oauth_token:
-            # All whitespace — treat as unset
-            oauth_token = None
-        elif ' ' in oauth_token or '\n' in oauth_token or '\r' in oauth_token or '\t' in oauth_token:
-            raise ValueError(
-                "OAuth token appears malformed (contains whitespace).\n"
-                f"Token length: {len(oauth_token)}\n"
-                "Check for copy/paste issues or environment variable corruption.\n"
-                "Set CLAUDE_CODE_OAUTH_TOKEN with a valid token from 'claude setup-token'"
-            )
-        elif len(oauth_token) < 20:
-            raise ValueError(
-                "OAuth token appears too short (expected 20+ characters).\n"
-                "Set CLAUDE_CODE_OAUTH_TOKEN with a valid token from 'claude setup-token'"
-            )
-
     if not api_key and not oauth_token:
         raise ValueError(
             "No authentication configured.\n"

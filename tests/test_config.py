@@ -877,19 +877,6 @@ args = []
                 load_config(project_dir)
             self.assertIn("tools.mcp_servers.test.command must be a non-empty string", str(ctx.exception))
 
-    def test_invalid_builtin_tool_raises(self) -> None:
-        """Test that unknown builtin tool raises validation error."""
-        with TemporaryDirectory() as tmpdir:
-            toml_content = """
-[tools]
-builtin = ["Read", "Write", "InvalidTool"]
-"""
-            project_dir = self._write_config(tmpdir, toml_content)
-            with self.assertRaises(ConfigError) as ctx:
-                load_config(project_dir)
-            self.assertIn("Unknown builtin tool", str(ctx.exception))
-            self.assertIn("InvalidTool", str(ctx.exception))
-
     def test_valid_builtin_tools_accepted(self) -> None:
         """Test that all valid builtin tools are accepted."""
         with TemporaryDirectory() as tmpdir:

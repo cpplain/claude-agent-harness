@@ -29,7 +29,6 @@ else:
 CONFIG_DIR_NAME = ".agent-harness"
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 DEFAULT_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
-_KNOWN_BUILTIN_TOOLS = {"Read", "Write", "Edit", "Glob", "Grep", "Bash", "LSP", "NotebookEdit", "WebFetch", "WebSearch", "Skill", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}
 _KNOWN_TOP_LEVEL_KEYS = {"model", "system_prompt", "max_turns", "max_iterations", "auto_continue_delay", "tools", "security", "tracking", "error_recovery", "phases", "init_files", "post_run_instructions"}
 
 
@@ -219,13 +218,6 @@ def _validate_config(config: HarnessConfig) -> list[str]:
         errors.append(
             f"tracking.file is required when tracking.type is {config.tracking.type!r}"
         )
-
-    # Validate builtin tools against known tools
-    for tool in config.tools.builtin:
-        if tool not in _KNOWN_BUILTIN_TOOLS:
-            errors.append(
-                f"Unknown builtin tool: {tool!r} (known tools: {sorted(_KNOWN_BUILTIN_TOOLS)})"
-            )
 
     # Validate MCP server commands are non-empty
     for name, server in config.tools.mcp_servers.items():

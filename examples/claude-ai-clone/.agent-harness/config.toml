@@ -20,7 +20,6 @@ args = ["puppeteer-mcp-server"]
 # --- Security ---
 [security]
 permission_mode = "acceptEdits"
-allowed_paths = ["./**"]
 
 [security.sandbox]
 enabled = true

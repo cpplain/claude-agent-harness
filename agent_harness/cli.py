@@ -44,7 +44,6 @@ builtin = {DEFAULT_BUILTIN_TOOLS}
 # --- Security ---
 [security]
 permission_mode = "acceptEdits"
-allowed_paths = ["./**"]
 
 [security.sandbox]
 enabled = true

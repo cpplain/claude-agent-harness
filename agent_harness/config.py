@@ -65,7 +65,6 @@ class SecurityConfig:
     """Security configuration."""
 
     permission_mode: str = "acceptEdits"
-    allowed_paths: list[str] = field(default_factory=lambda: ["./**"])
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     permissions: PermissionRulesConfig = field(default_factory=PermissionRulesConfig)
 
@@ -393,7 +392,6 @@ def load_config(
 
     security = SecurityConfig(
         permission_mode=raw_security.get("permission_mode", "acceptEdits"),
-        allowed_paths=raw_security.get("allowed_paths", ["./**"]),
         sandbox=sandbox,
         permissions=permissions,
     )

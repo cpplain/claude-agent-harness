@@ -304,9 +304,6 @@ env = { NODE_ENV = "production" }
 # Permission mode: "default", "acceptEdits", "bypassPermissions", "plan"
 permission_mode = "acceptEdits"
 
-# Filesystem paths the agent can access (globs supported)
-allowed_paths = ["./**"]
-
 # OS-level sandbox configuration
 [security.sandbox]
 enabled = true
@@ -411,10 +408,9 @@ post_run_instructions = [
 
 #### `[security]` Section
 
-| Field             | Type     | Default         | Description                                                                       |
-| ----------------- | -------- | --------------- | --------------------------------------------------------------------------------- |
-| `permission_mode` | string   | `"acceptEdits"` | Permission mode: `"default"`, `"acceptEdits"`, `"bypassPermissions"`, or `"plan"` |
-| `allowed_paths`   | string[] | `["./**"]`      | Filesystem paths the agent can access (glob patterns supported)                   |
+| Field             | Type   | Default         | Description                                                                       |
+| ----------------- | ------ | --------------- | --------------------------------------------------------------------------------- |
+| `permission_mode` | string | `"acceptEdits"` | Permission mode: `"default"`, `"acceptEdits"`, `"bypassPermissions"`, or `"plan"` |
 
 **Sandbox** (`[security.sandbox]`):
 

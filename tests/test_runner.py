@@ -534,55 +534,22 @@ class TestNarrowExceptionHandler(unittest.TestCase):
                 with self.assertRaises(error_class):
                     asyncio.run(run_agent_session(mock_client, "test prompt"))
 
-    def test_runtime_error_caught(self) -> None:
-        """Test that RuntimeError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=RuntimeError("Runtime error"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "Runtime error")
-
-    def test_connection_error_caught(self) -> None:
-        """Test that ConnectionError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=ConnectionError("Connection failed"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "Connection failed")
-
-    def test_timeout_error_caught(self) -> None:
-        """Test that TimeoutError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=TimeoutError("Timeout"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "Timeout")
-
-    def test_os_error_caught(self) -> None:
-        """Test that OSError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=OSError("OS error"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "OS error")
-
-    def test_io_error_caught(self) -> None:
-        """Test that IOError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=IOError("IO error"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "IO error")
+    def test_operational_errors_caught(self) -> None:
+        """Test that operational errors are caught and return error status."""
+        error_cases = [
+            (RuntimeError, "Runtime error"),
+            (ConnectionError, "Connection failed"),
+            (TimeoutError, "Timeout"),
+            (OSError, "OS error"),
+            (IOError, "IO error"),
+        ]
+        for error_class, message in error_cases:
+            with self.subTest(error=error_class.__name__):
+                mock_client = MagicMock()
+                mock_client.query = AsyncMock(side_effect=error_class(message))
+                status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
+                self.assertEqual(status, "error")
+                self.assertEqual(response, message)
 
 
 if __name__ == "__main__":

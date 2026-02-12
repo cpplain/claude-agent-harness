@@ -18,7 +18,6 @@ from agent_harness.config import (
     DEFAULT_BUILTIN_TOOLS,
     HarnessConfig,
     load_config,
-    resolve_file_reference,
 )
 
 
@@ -56,26 +55,6 @@ class TestConfigDefaults(unittest.TestCase):
     def test_default_phases(self) -> None:
         config = HarnessConfig()
         self.assertEqual(config.phases, [])
-
-
-class TestFileReference(unittest.TestCase):
-    """Test file: reference resolution."""
-
-    def test_inline_string_returned_as_is(self) -> None:
-        result = resolve_file_reference("Hello world", Path("/tmp"))
-        self.assertEqual(result, "Hello world")
-
-    def test_file_reference_loads_content(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            prompt_file = Path(tmpdir) / "system.md"
-            prompt_file.write_text("You are a coding assistant.")
-            result = resolve_file_reference("file:system.md", Path(tmpdir))
-            self.assertEqual(result, "You are a coding assistant.")
-
-    def test_file_reference_missing_file_raises(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            with self.assertRaises(ConfigError):
-                resolve_file_reference("file:missing.md", Path(tmpdir))
 
 
 class TestLoadConfig(unittest.TestCase):

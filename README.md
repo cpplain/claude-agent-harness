@@ -240,7 +240,7 @@ For production deployments, protect critical branches using **server-side git ho
 
 ## Configuration
 
-Configuration lives in `.agent-harness/config.toml`. See the [example config](examples/claude-ai-clone/.agent-harness/config.toml) for a complete reference.
+Configuration lives in `.agent-harness/config.toml`.
 
 ### Directory Layout
 
@@ -258,212 +258,18 @@ project_dir/
 └── (generated code lives here)
 ```
 
-### Full Configuration Reference
+### Configuration Reference
 
-Complete annotated example showing all available configuration options:
+For a complete, annotated configuration reference with detailed comments on all available options, see:
 
-```toml
-# --- Agent Settings ---
-# Model to use for agent execution
-model = "claude-sonnet-4-5-20250929"
+- **[`agent_harness/templates/config.toml`](agent_harness/templates/config.toml)** - Template with full documentation
+- **[`examples/claude-ai-clone/.agent-harness/config.toml`](examples/claude-ai-clone/.agent-harness/config.toml)** - Real-world example
 
-# System prompt (can use "file:prompts/system.md" to load from file)
-system_prompt = "You are an expert full-stack developer..."
+The `init` command creates a new config using the template:
 
-# --- Session Settings ---
-# Maximum API turns per session before auto-continuing
-max_turns = 1000
-
-# Maximum total sessions before stopping (default: unlimited)
-max_iterations = 10
-
-# Delay in seconds before auto-continuing to next session
-auto_continue_delay = 3
-
-# --- Tools ---
-[tools]
-# Built-in Claude SDK tools to enable
-builtin = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
-
-# MCP servers to connect
-[tools.mcp_servers.puppeteer]
-command = "npx"
-args = ["puppeteer-mcp-server"]
-env = { NODE_ENV = "production" }
-
-# --- Security ---
-[security]
-# Permission mode: "default", "acceptEdits", "bypassPermissions", "plan"
-permission_mode = "acceptEdits"
-
-# OS-level sandbox configuration
-[security.sandbox]
-enabled = true
-auto_allow_bash_if_sandboxed = true
-allow_unsandboxed_commands = false
-
-# Network restrictions for sandboxed commands
-[security.sandbox.network]
-allowed_domains = ["registry.npmjs.org", "github.com"]
-allow_local_binding = false
-allow_unix_sockets = []
-
-# Declarative permission rules (evaluated by SDK before tool execution)
-[security.permissions]
-allow = [
-    "Bash(npm *)", "Bash(node *)", "Bash(git *)",
-    "Bash(ls *)", "Bash(cat *)", "Bash(grep *)",
-]
-deny = [
-    "Bash(curl *)", "Bash(wget *)",
-    "Read(./.env)", "Read(./.env.*)",
-]
-
-# --- Progress Tracking ---
-[tracking]
-# Tracker type: "json_checklist", "notes_file", "none"
-type = "json_checklist"
-
-# Tracking file path (relative to harness_dir)
-file = "feature_list.json"
-
-# Field name indicating completion (for json_checklist)
-passing_field = "passes"
-
-# --- Error Recovery ---
-[error_recovery]
-# Circuit breaker: max consecutive session errors before stopping
-max_consecutive_errors = 5
-
-# Initial backoff delay after first error
-initial_backoff_seconds = 5.0
-
-# Maximum backoff delay (capped exponential backoff)
-max_backoff_seconds = 120.0
-
-# Multiplier for exponential backoff
-backoff_multiplier = 2.0
-
-# --- Phases ---
-# Multi-phase workflow definitions
-[[phases]]
-name = "initializer"
-prompt = "file:prompts/initializer.md"
-run_once = true
-condition = "not_exists:.agent-harness/feature_list.json"
-
-[[phases]]
-name = "coding"
-prompt = "file:prompts/coding.md"
-
-# --- Init Files ---
-# Files to copy on first run
-[[init_files]]
-source = "prompts/app_spec.txt"
-dest = "app_spec.txt"
-
-# --- Post-Run Instructions ---
-# Commands to display after agent completes
-post_run_instructions = [
-    "npm install",
-    "npm run dev",
-    "Open http://localhost:3000",
-]
+```bash
+uv run python -m agent_harness init --project-dir ./my-project
 ```
-
-### Configuration Fields
-
-#### Top-Level Settings
-
-| Field                   | Type     | Default                                 | Description                                                   |
-| ----------------------- | -------- | --------------------------------------- | ------------------------------------------------------------- |
-| `model`                 | string   | `"claude-sonnet-4-5-20250929"`          | Claude model to use for agent execution                       |
-| `system_prompt`         | string   | `"You are a helpful coding assistant."` | System prompt (supports `file:` references)                   |
-| `max_turns`             | int      | `1000`                                  | Maximum API turns per session before auto-continuing          |
-| `max_iterations`        | int?     | `null`                                  | Maximum total sessions before stopping (unlimited if not set) |
-| `auto_continue_delay`   | int      | `3`                                     | Delay in seconds before auto-continuing to next session       |
-| `post_run_instructions` | string[] | `[]`                                    | Commands to display in final summary banner                   |
-
-#### `[tools]` Section
-
-| Field     | Type     | Default                                             | Description                         |
-| --------- | -------- | --------------------------------------------------- | ----------------------------------- |
-| `builtin` | string[] | `["Read", "Write", "Edit", "Glob", "Grep", "Bash"]` | Built-in Claude SDK tools to enable |
-
-**MCP Servers** (`[tools.mcp_servers.<name>]`):
-
-| Field     | Type     | Default | Description                                         |
-| --------- | -------- | ------- | --------------------------------------------------- |
-| `command` | string   | `""`    | Command to execute MCP server                       |
-| `args`    | string[] | `[]`    | Command-line arguments                              |
-| `env`     | map      | `{}`    | Environment variables (supports `${VAR}` expansion) |
-
-#### `[security]` Section
-
-| Field             | Type   | Default         | Description                                                                       |
-| ----------------- | ------ | --------------- | --------------------------------------------------------------------------------- |
-| `permission_mode` | string | `"acceptEdits"` | Permission mode: `"default"`, `"acceptEdits"`, `"bypassPermissions"`, or `"plan"` |
-
-**Sandbox** (`[security.sandbox]`):
-
-| Field                          | Type     | Default | Description                                            |
-| ------------------------------ | -------- | ------- | ------------------------------------------------------ |
-| `enabled`                      | bool     | `true`  | Enable OS-level sandbox for Bash commands              |
-| `auto_allow_bash_if_sandboxed` | bool     | `true`  | Auto-allow all Bash commands when sandbox is enabled   |
-| `allow_unsandboxed_commands`   | bool     | `false` | Allow commands outside sandbox (secure default: false) |
-| `excluded_commands`            | string[] | `[]`    | Commands excluded from sandboxing                      |
-
-**Sandbox Network** (`[security.sandbox.network]`):
-
-| Field                 | Type     | Default | Description                              |
-| --------------------- | -------- | ------- | ---------------------------------------- |
-| `allowed_domains`     | string[] | `[]`    | Domains the agent can access via network |
-| `allow_local_binding` | bool     | `false` | Allow binding to localhost addresses     |
-| `allow_unix_sockets`  | string[] | `[]`    | Unix socket paths the agent can access   |
-
-**Permission Rules** (`[security.permissions]`):
-
-| Field   | Type     | Default | Description                                                      |
-| ------- | -------- | ------- | ---------------------------------------------------------------- |
-| `allow` | string[] | `[]`    | Tool patterns to allow (e.g., `"Bash(npm *)"`, `"Read(./**)"`)   |
-| `deny`  | string[] | `[]`    | Tool patterns to deny (e.g., `"Bash(curl *)"`, `"Read(./.env)")` |
-
-#### `[tracking]` Section
-
-| Field           | Type   | Default    | Description                                                                          |
-| --------------- | ------ | ---------- | ------------------------------------------------------------------------------------ |
-| `type`          | string | `"none"`   | Tracker type: `"json_checklist"`, `"notes_file"`, or `"none"`                        |
-| `file`          | string | `""`       | Tracking file path (relative to harness_dir, required for json_checklist/notes_file) |
-| `passing_field` | string | `"passes"` | JSON field indicating completion (for json_checklist)                                |
-
-#### `[error_recovery]` Section
-
-| Field                     | Type  | Default | Description                                                     |
-| ------------------------- | ----- | ------- | --------------------------------------------------------------- |
-| `max_consecutive_errors`  | int   | `5`     | Circuit breaker: max consecutive session errors before stopping |
-| `initial_backoff_seconds` | float | `5.0`   | Initial backoff delay after first error                         |
-| `max_backoff_seconds`     | float | `120.0` | Maximum backoff delay (capped exponential backoff)              |
-| `backoff_multiplier`      | float | `2.0`   | Multiplier for exponential backoff                              |
-
-#### `[[phases]]` Section
-
-Multiple phases can be defined using `[[phases]]` array syntax:
-
-| Field       | Type   | Default    | Description                                                 |
-| ----------- | ------ | ---------- | ----------------------------------------------------------- |
-| `name`      | string | _required_ | Phase name (for logging/debugging)                          |
-| `prompt`    | string | _required_ | Phase prompt (supports `file:` references)                  |
-| `run_once`  | bool   | `false`    | Only execute this phase once across all sessions            |
-| `condition` | string | `""`       | Condition for running phase (e.g., `"not_exists:file.txt"`) |
-
-#### `[[init_files]]` Section
-
-Multiple init files can be defined using `[[init_files]]` array syntax:
-
-| Field    | Type   | Default    | Description                                     |
-| -------- | ------ | ---------- | ----------------------------------------------- |
-| `source` | string | _required_ | Source file path (relative to harness_dir)      |
-| `dest`   | string | _required_ | Destination file path (relative to harness_dir) |
 
 ### Config Loading Precedence
 

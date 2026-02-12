@@ -21,7 +21,10 @@ logger = logging.getLogger(__name__)
 
 from claude_agent_sdk import (
     AssistantMessage,
+    CLIConnectionError,
     ClaudeSDKClient,
+    ClaudeSDKError,
+    ProcessError,
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
@@ -221,7 +224,7 @@ async def run_agent_session(
         print("\n" + "-" * 70 + "\n")
         return "continue", ""
 
-    except (OSError, IOError, ConnectionError, TimeoutError, RuntimeError) as e:
+    except (OSError, IOError, ConnectionError, TimeoutError, RuntimeError, ClaudeSDKError, CLIConnectionError, ProcessError) as e:
         logger.exception("Error during agent session")
         print(f"Error during agent session: {e}")
         return "error", str(e)

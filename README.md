@@ -252,7 +252,6 @@ project_dir/
 │   │   ├── app_spec.txt
 │   │   ├── coding.md
 │   │   └── initializer.md
-│   ├── .claude_settings.json  # Generated security settings (auto-created, gitignored)
 │   ├── config.toml            # Main configuration (required)
 │   └── session.json           # Session number, completed phases (auto-created)
 └── (generated code lives here)

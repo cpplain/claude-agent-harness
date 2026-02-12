@@ -42,5 +42,4 @@ generations/
 logs/
 
 # Agent harness runtime state and logs
-.agent-harness/.claude_settings.json
 .agent-harness/logs/

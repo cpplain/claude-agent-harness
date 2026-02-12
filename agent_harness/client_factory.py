@@ -11,41 +11,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
 from agent_harness.config import HarnessConfig
-
-
-def _write_settings(config: HarnessConfig) -> Path:
-    """Write .claude_settings.json to .agent-harness/ and return the path.
-
-    Only writes if the content has changed to avoid unnecessary file writes.
-    Settings file now contains only permission rules (allow/deny).
-    """
-    # Build settings dict with only permission rules
-    settings = {
-        "permissions": {
-            "allow": config.security.permissions.allow.copy(),
-            "deny": config.security.permissions.deny.copy(),
-        },
-    }
-
-    settings_file = config.harness_dir / ".claude_settings.json"
-
-    # Only write if content has changed
-    new_content = json.dumps(settings, indent=2)
-    try:
-        if settings_file.read_text() == new_content:
-            return settings_file
-    except OSError:
-        pass
-    settings_file.write_text(new_content)
-
-    return settings_file
 
 
 def create_client(config: HarnessConfig) -> ClaudeSDKClient:
@@ -81,8 +52,14 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
     # Ensure project directory exists
     config.project_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write settings file
-    settings_file = _write_settings(config)
+    # Build settings as JSON string
+    settings_dict = {
+        "permissions": {
+            "allow": config.security.permissions.allow.copy(),
+            "deny": config.security.permissions.deny.copy(),
+        },
+    }
+    settings_json = json.dumps(settings_dict)
 
     # Build MCP servers
     mcp_servers = {
@@ -104,7 +81,11 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
     }
 
     # Log setup summary
-    logger.info("Settings written to %s", settings_file)
+    logger.info("Permission rules configured:")
+    if config.security.permissions.allow:
+        logger.info("   - Allow: %s", ", ".join(config.security.permissions.allow[:3]) + ("..." if len(config.security.permissions.allow) > 3 else ""))
+    if config.security.permissions.deny:
+        logger.info("   - Deny: %s", ", ".join(config.security.permissions.deny[:3]) + ("..." if len(config.security.permissions.deny) > 3 else ""))
     logger.info("   - Sandbox %s", "enabled" if config.security.sandbox.enabled else "disabled")
     logger.info("   - Permission mode: %s", config.security.permission_mode)
     logger.info("   - Working directory: %s", config.project_dir.resolve())
@@ -117,7 +98,7 @@ def create_client(config: HarnessConfig) -> ClaudeSDKClient:
         allowed_tools=list(config.tools.builtin) + [f"mcp__{server_name}__*" for server_name in config.tools.mcp_servers],
         max_turns=config.max_turns,
         cwd=str(config.project_dir.resolve()),
-        settings=str(settings_file.resolve()),
+        settings=settings_json,
         env=auth_env,
         mcp_servers=mcp_servers,
         permission_mode=config.security.permission_mode,

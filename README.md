@@ -30,6 +30,28 @@ Agent Harness provides:
 - **Session persistence** — auto-continue across sessions with state tracking
 - **Setup verification** — check auth, tools, config before running
 
+## Design Philosophy
+
+This project follows Anthropic's recommendations for building agents. Before designing or implementing any feature, read and understand their guidance—they have already solved most agent problems and documented both WHAT to do and WHY.
+
+### Required Reading
+
+**SDK & Implementation**
+
+- [Agent SDK Overview](https://platform.claude.com/docs/en/agent-sdk/overview) — Built-in capabilities
+- [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing) — Security model
+- [Effective Harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — Session patterns
+
+**Architecture & Design**
+
+- [Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — Core principles
+- [Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — Prompt design
+- [Writing Tools for Agents](https://www.anthropic.com/engineering/writing-tools-for-agents) — Tool design
+
+### Example: Security
+
+This project originally had ~500 lines of custom shell command parsing for security. The [sandboxing article](https://www.anthropic.com/engineering/claude-code-sandboxing) explains why Anthropic chose OS-level isolation instead—reading it first would have avoided this unnecessary complexity.
+
 ## Getting Started
 
 ### 1. Clone and install

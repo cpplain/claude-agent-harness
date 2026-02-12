@@ -64,6 +64,17 @@ cli.py → config.py → runner.py → client_factory.py → Claude SDK
 - **`file:` resolution** — Prompt strings starting with `file:` are resolved relative to the `.agent-harness/` directory and replaced with file contents during config loading.
 - **MCP environment variables** — MCP server `env` values support `${VAR}` syntax for environment variable expansion.
 
+## Design Principles
+
+**Understand Anthropic's Guidance First**: Before designing any feature, read and understand Anthropic's documentation. They have already solved most agent problems and documented both WHAT to do and WHY. Do not design solutions without first understanding their recommended approach.
+
+Required reading:
+
+- [Agent SDK Overview](https://platform.claude.com/docs/en/agent-sdk/overview)
+- [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing)
+- [Effective Harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+- [Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+
 ## Dependencies
 
 Single runtime dependency: `claude-agent-sdk>=0.1.0` (plus `tomli` backport for Python <3.11). The SDK provides `ClaudeSDKClient`, message/block types, hook matchers, and built-in tools.

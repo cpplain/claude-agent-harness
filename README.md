@@ -1,6 +1,6 @@
 # Agent Harness
 
-A generic, configurable harness for long-running autonomous coding agents. Built on the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk), it implements [Anthropic's guide for effective agent harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), featuring phase-driven execution, configurable MCP tools, and multi-layered security.
+A generic, configurable harness for long-running autonomous coding agents. Built on the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk), it implements [Anthropic's guide for effective agent harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), featuring phase-driven execution, configurable MCP tools, and SDK-native sandbox isolation.
 
 This project originated from the [autonomous-coding example](https://github.com/anthropics/claude-quickstarts/tree/main/autonomous-coding) in the claude-quickstarts repository and extends it into a fully configurable, project-agnostic harness.
 
@@ -23,12 +23,34 @@ Agent Harness provides:
 
 - **Phase-based workflows** — declarative phase definitions with conditions and run-once semantics
 - **TOML-based configuration** — no code changes needed to customize behavior
-- **Multi-layered security** — OS sandbox, filesystem restrictions, command allowlists, automatic git validation
+- **SDK-native security** — OS sandbox with network isolation, declarative permission rules (allow/deny), secure defaults
 - **Progress tracking** — JSON checklist, notes file, or none with automatic completion detection
 - **Error recovery** — exponential backoff and circuit breaker to prevent runaway costs
-- **MCP server support** — browser automation, databases, etc. with optional tool restrictions
+- **MCP server support** — browser automation, databases, etc.
 - **Session persistence** — auto-continue across sessions with state tracking
 - **Setup verification** — check auth, tools, config before running
+
+## Design Philosophy
+
+This project follows Anthropic's recommendations for building agents. Before designing or implementing any feature, read and understand their guidance—they have already solved most agent problems and documented both WHAT to do and WHY.
+
+### Required Reading
+
+**SDK & Implementation**
+
+- [Agent SDK Overview](https://platform.claude.com/docs/en/agent-sdk/overview) — Built-in capabilities
+- [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing) — Security model
+- [Effective Harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — Session patterns
+
+**Architecture & Design**
+
+- [Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — Core principles
+- [Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — Prompt design
+- [Writing Tools for Agents](https://www.anthropic.com/engineering/writing-tools-for-agents) — Tool design
+
+### Example: Security
+
+This project originally had ~500 lines of custom shell command parsing for security. The [sandboxing article](https://www.anthropic.com/engineering/claude-code-sandboxing) explains why Anthropic chose OS-level isolation instead—reading it first would have avoided this unnecessary complexity.
 
 ## Getting Started
 
@@ -141,7 +163,7 @@ The harness executes agents in configurable phases with conditions and run-once 
   - Session state file (`session.json`) tracking completed phases
   - Git commits preserving code changes
 - **Auto-continue**: Sessions auto-resume after configured delay (default 3s)
-- **Completion detection**: Harness stops automatically when `tracker.is_complete()` returns `true` (all features passing)
+- **Completion detection**: Harness stops automatically when `tracker.is_complete()` returns `true` (only `json_checklist` supports this; `notes_file` and `none` trackers require manual stop via Ctrl+C)
 - Press `Ctrl+C` to pause; run same command to resume
 
 ### Error Recovery & Circuit Breaker
@@ -149,7 +171,7 @@ The harness executes agents in configurable phases with conditions and run-once 
 Prevents runaway API costs when sessions fail repeatedly:
 
 - Tracks consecutive errors across sessions
-- **Exponential backoff**: 5s → 10s → 20s → 40s → 120s (capped)
+- **Exponential backoff**: 5s → 10s → 20s → 40s → 80s (circuit breaker trips; max cap 120s)
 - **Circuit breaker**: Trips after 5 consecutive errors (configurable)
 - Successful session resets error counter
 - Error context forwarded to next session to help recovery
@@ -164,59 +186,57 @@ backoff_multiplier = 2.0
 
 ## Security Model
 
-This harness uses a defense-in-depth security approach with multiple layers:
+This harness follows [Anthropic's secure deployment recommendations](https://platform.claude.com/docs/en/agent-sdk/secure-deployment) by relying on the SDK's built-in sandbox and permission system as the primary defense, rather than custom application-layer validation.
 
-### 1. OS-Level Sandbox
+### SDK-Native Sandbox
 
-Bash commands run in an isolated environment that prevents filesystem escape.
+The Claude SDK provides process-level isolation with:
 
-### 2. Filesystem Restrictions
-
-File operations are restricted to `allowed_paths` (default: `./**` — the project directory only).
-
-### 3. Command Allowlist
-
-Bash commands are validated against an allowlist before execution. The harness provides base commands for common operations, and projects add their own:
+- **Process isolation** — Bash commands run in a sandboxed subprocess
+- **Network restrictions** — Configurable domain allowlist and Unix socket access
+- **Filesystem boundaries** — Commands are restricted to the project directory
 
 ```toml
-[security.bash]
-allowed_commands = ["npm", "node", "ruby", "bundle", "init.sh"]
+[security.sandbox]
+enabled = true
+auto_allow_bash_if_sandboxed = true
+allow_unsandboxed_commands = false  # secure default
+
+[security.sandbox.network]
+allowed_domains = ["registry.npmjs.org", "github.com"]
+allow_local_binding = false
+allow_unix_sockets = []
 ```
 
-### 4. Git Safety (Automatic)
+### Declarative Permission Rules
 
-When `git` is in the allowed commands list, destructive operations are automatically blocked:
-
-- **Blocked**: `git clean`, `git reset --hard`, `git checkout -- <path>`, `git restore`, `git push --force/-f`
-- **Allowed**: `git status`, `git add`, `git commit`, `git diff`, `git log`, `git push`, etc.
-
-No additional configuration needed — git validation happens automatically.
-
-### 5. Special Command Validation
-
-Certain commands have additional validation logic:
-
-- **`pkill`**: Only allows killing configured dev processes (node, npm, vite, next)
-- **`chmod`**: Only allows `+x` mode (making files executable)
-- **`init.sh`**: Only allows `./init.sh` execution
-
-### 6. MCP Tool Restrictions
-
-Optional regex-based patterns and action allowlists for MCP tools:
+Security is enforced through SDK permission rules, not runtime command parsing:
 
 ```toml
-[security.mcp]
-tool_restrictions.puppeteer.blocked_patterns = [r"rm -rf", r"--force"]
-tool_restrictions.puppeteer.allowed_args = ["navigate", "screenshot"]
+[security.permissions]
+allow = [
+    "Bash(npm *)", "Bash(node *)", "Bash(git *)",
+    "Bash(ls *)", "Bash(cat *)", "Bash(grep *)",
+    "Read(./**)", "Write(./**)", "Edit(./**)",
+]
+deny = [
+    "Bash(curl *)", "Bash(wget *)",
+    "Read(./.env)", "Read(./.env.*)",
+]
 ```
 
-### OAuth Token Validation
+Permission rules are evaluated by the SDK before tool execution. The agent cannot bypass these rules through prompt injection or indirect command execution.
 
-The harness validates OAuth tokens before use, checking for:
+### Secure Defaults
 
-- Embedded whitespace (spaces, newlines, carriage returns)
-- Copy/paste corruption from clipboard
-- Provides helpful error messages with debugging info
+- `allow_unsandboxed_commands` defaults to `false`
+- When sandbox is enabled, `auto_allow_bash_if_sandboxed=true` auto-allows Bash commands
+- When sandbox is disabled, explicit `permissions.allow` rules are required
+- Network access is denied by default
+
+### Git Protection Recommendations
+
+For production deployments, protect critical branches using **server-side git hooks or branch protection rules** on your git hosting platform (GitHub, GitLab, Bitbucket), not client-side validation. This prevents destructive operations like `git push --force` at the source.
 
 ## Configuration
 
@@ -273,33 +293,31 @@ env = { NODE_ENV = "production" }
 
 # --- Security ---
 [security]
-# Permission mode: "acceptEdits", "bypassPermissions", "plan"
+# Permission mode: "default", "acceptEdits", "bypassPermissions", "plan"
 permission_mode = "acceptEdits"
-
-# Filesystem paths the agent can access (globs supported)
-allowed_paths = ["./**"]
 
 # OS-level sandbox configuration
 [security.sandbox]
 enabled = true
 auto_allow_bash_if_sandboxed = true
+allow_unsandboxed_commands = false
 
-# Bash command security
-[security.bash]
-allowed_commands = ["ls", "cat", "npm", "node", "git", "pkill", "chmod"]
+# Network restrictions for sandboxed commands
+[security.sandbox.network]
+allowed_domains = ["registry.npmjs.org", "github.com"]
+allow_local_binding = false
+allow_unix_sockets = []
 
-# Extra validators for specific commands
-[security.bash.extra_validators.pkill]
-allowed_targets = ["node", "npm", "vite", "next"]
-
-[security.bash.extra_validators.chmod]
-allowed_modes = ["+x", "u+x", "a+x"]
-
-# MCP tool restrictions (optional)
-[security.mcp]
-[security.mcp.tool_restrictions.puppeteer_navigate]
-blocked_patterns = [".*admin.*", ".*internal.*"]
-allowed_args = ["url"]
+# Declarative permission rules (evaluated by SDK before tool execution)
+[security.permissions]
+allow = [
+    "Bash(npm *)", "Bash(node *)", "Bash(git *)",
+    "Bash(ls *)", "Bash(cat *)", "Bash(grep *)",
+]
+deny = [
+    "Bash(curl *)", "Bash(wget *)",
+    "Read(./.env)", "Read(./.env.*)",
+]
 
 # --- Progress Tracking ---
 [tracking]
@@ -382,39 +400,33 @@ post_run_instructions = [
 
 #### `[security]` Section
 
-| Field             | Type     | Default         | Description                                                          |
-| ----------------- | -------- | --------------- | -------------------------------------------------------------------- |
-| `permission_mode` | string   | `"acceptEdits"` | Permission mode: `"acceptEdits"`, `"bypassPermissions"`, or `"plan"` |
-| `allowed_paths`   | string[] | `["./**"]`      | Filesystem paths the agent can access (glob patterns supported)      |
+| Field             | Type   | Default         | Description                                                                       |
+| ----------------- | ------ | --------------- | --------------------------------------------------------------------------------- |
+| `permission_mode` | string | `"acceptEdits"` | Permission mode: `"default"`, `"acceptEdits"`, `"bypassPermissions"`, or `"plan"` |
 
 **Sandbox** (`[security.sandbox]`):
 
-| Field                          | Type | Default | Description                                          |
-| ------------------------------ | ---- | ------- | ---------------------------------------------------- |
-| `enabled`                      | bool | `true`  | Enable OS-level sandbox for Bash commands            |
-| `auto_allow_bash_if_sandboxed` | bool | `true`  | Auto-allow all Bash commands when sandbox is enabled |
+| Field                          | Type     | Default | Description                                            |
+| ------------------------------ | -------- | ------- | ------------------------------------------------------ |
+| `enabled`                      | bool     | `true`  | Enable OS-level sandbox for Bash commands              |
+| `auto_allow_bash_if_sandboxed` | bool     | `true`  | Auto-allow all Bash commands when sandbox is enabled   |
+| `allow_unsandboxed_commands`   | bool     | `false` | Allow commands outside sandbox (secure default: false) |
+| `excluded_commands`            | string[] | `[]`    | Commands excluded from sandboxing                      |
 
-**Bash Security** (`[security.bash]`):
+**Sandbox Network** (`[security.sandbox.network]`):
 
-| Field              | Type     | Default | Description                                                    |
-| ------------------ | -------- | ------- | -------------------------------------------------------------- |
-| `allowed_commands` | string[] | `[]`    | Bash commands the agent can execute (when sandbox is disabled) |
+| Field                 | Type     | Default | Description                              |
+| --------------------- | -------- | ------- | ---------------------------------------- |
+| `allowed_domains`     | string[] | `[]`    | Domains the agent can access via network |
+| `allow_local_binding` | bool     | `false` | Allow binding to localhost addresses     |
+| `allow_unix_sockets`  | string[] | `[]`    | Unix socket paths the agent can access   |
 
-**Bash Extra Validators** (`[security.bash.extra_validators.<command>]`):
+**Permission Rules** (`[security.permissions]`):
 
-| Field             | Type     | Default | Description                               |
-| ----------------- | -------- | ------- | ----------------------------------------- |
-| `allowed_targets` | string[] | `[]`    | Allowed targets for commands like `pkill` |
-| `allowed_modes`   | string[] | `[]`    | Allowed modes for commands like `chmod`   |
-
-**MCP Security** (`[security.mcp]`):
-
-Defined as `[security.mcp.tool_restrictions.<tool_name>]`:
-
-| Field              | Type     | Default | Description                                   |
-| ------------------ | -------- | ------- | --------------------------------------------- |
-| `blocked_patterns` | string[] | `[]`    | Regex patterns to block in tool arguments     |
-| `allowed_args`     | string[] | `[]`    | Allowed argument names (all allowed if empty) |
+| Field   | Type     | Default | Description                                                      |
+| ------- | -------- | ------- | ---------------------------------------------------------------- |
+| `allow` | string[] | `[]`    | Tool patterns to allow (e.g., `"Bash(npm *)"`, `"Read(./**)"`)   |
+| `deny`  | string[] | `[]`    | Tool patterns to deny (e.g., `"Bash(curl *)"`, `"Read(./.env)")` |
 
 #### `[tracking]` Section
 
@@ -467,10 +479,7 @@ claude-agent-harness/
 │   ├── cli.py              # Argument parsing, subcommands
 │   ├── client_factory.py   # Builds ClaudeSDKClient from config
 │   ├── config.py           # Config loading, validation, HarnessConfig
-│   ├── display.py          # Console output formatting
-│   ├── prompts.py          # Prompt loading with file: resolution
 │   ├── runner.py           # Generic agent loop
-│   ├── security.py         # Configurable bash security hooks
 │   ├── tracking.py         # Progress tracking implementations
 │   └── verify.py           # Setup verification checks
 ├── examples/
@@ -483,11 +492,11 @@ claude-agent-harness/
 │       │   └── config.toml
 │       └── README.md
 ├── tests/
+│   ├── test_cli.py
 │   ├── test_client_factory.py
 │   ├── test_config.py
 │   ├── test_prompts.py
 │   ├── test_runner.py
-│   ├── test_security.py
 │   ├── test_tracking.py
 │   └── test_verify.py
 ├── .env.example
@@ -531,20 +540,6 @@ Check that all `file:` references in your config.toml point to files relative to
 prompt = "file:prompts/coding_prompt.md"  # Must exist at .agent-harness/prompts/coding_prompt.md
 ```
 
-### "Command 'X' is not in the allowed commands list"
-
-The agent tried to run a bash command that's not in your `security.bash.allowed_commands` list. To fix:
-
-1. Add the command to your config.toml:
-
-   ```toml
-   [security.bash]
-   allowed_commands = ["ls", "cat", "npm", "node", "your-command"]
-   ```
-
-2. If the command needs extra validation (like `chmod` or `git`), check that validators are configured correctly
-3. For destructive operations, the harness blocks certain git commands by default (clean, reset --hard, etc.)
-
 ### "Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set"
 
 You need authentication credentials to use the Claude API:
@@ -577,7 +572,7 @@ If a session truly hangs:
 
 2. **Zero wasted context**: Only tools and servers declared in the config are available to the agent. No unused MCP servers polluting the context.
 
-3. **Defense in depth**: Multiple security layers (sandbox, permissions, allowlists, validation) protect against unintended actions.
+3. **Defense in depth**: Multiple security layers (sandbox, permission rules, secure defaults) protect against unintended actions.
 
 4. **Session persistence**: Progress is saved between sessions via the progress file and git commits, enabling long-running tasks that span hours or days.
 
@@ -590,7 +585,6 @@ If a session truly hangs:
 python -m unittest discover tests -v
 
 # Run specific test modules
-python -m unittest tests.test_security -v       # Security validation
 python -m unittest tests.test_config -v         # Configuration loading
 python -m unittest tests.test_tracking -v       # Progress tracking
 python -m unittest tests.test_runner -v         # Session loop logic
@@ -599,7 +593,7 @@ python -m unittest tests.test_client_factory -v # Client creation
 
 Test coverage includes:
 
-- **Security validation**: Command allowlist, chmod/pkill/init.sh validation, git destructive operation blocking (26 test cases), parenthesis handling
+- **Security configuration**: Sandbox settings, permission rules, network isolation
 - **Configuration loading**: TOML parsing, defaults, validation, error cases
 - **Progress tracking**: Completion detection, JSON parsing, print formatting
 - **Prompt loading**: File reading, `file:` resolution, error handling

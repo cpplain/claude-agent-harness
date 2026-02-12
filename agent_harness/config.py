@@ -29,24 +29,16 @@ else:
 CONFIG_DIR_NAME = ".agent-harness"
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 DEFAULT_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
-_KNOWN_BUILTIN_TOOLS = {"Read", "Write", "Edit", "Glob", "Grep", "Bash", "LSP", "NotebookEdit", "WebFetch", "WebSearch", "Skill", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}
 _KNOWN_TOP_LEVEL_KEYS = {"model", "system_prompt", "max_turns", "max_iterations", "auto_continue_delay", "tools", "security", "tracking", "error_recovery", "phases", "init_files", "post_run_instructions"}
 
 
 @dataclass
-class ExtraValidatorConfig:
-    """Configuration for a command-specific extra validator."""
+class SandboxNetworkConfig:
+    """Configuration for sandbox network isolation."""
 
-    allowed_targets: list[str] = field(default_factory=list)
-    allowed_modes: list[str] = field(default_factory=list)
-
-
-@dataclass
-class BashSecurityConfig:
-    """Configuration for bash command security hooks."""
-
-    allowed_commands: list[str] = field(default_factory=list)
-    extra_validators: dict[str, ExtraValidatorConfig] = field(default_factory=dict)
+    allowed_domains: list[str] = field(default_factory=list)
+    allow_local_binding: bool = False
+    allow_unix_sockets: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -55,6 +47,17 @@ class SandboxConfig:
 
     enabled: bool = True
     auto_allow_bash_if_sandboxed: bool = True
+    allow_unsandboxed_commands: bool = False
+    excluded_commands: list[str] = field(default_factory=list)
+    network: SandboxNetworkConfig = field(default_factory=SandboxNetworkConfig)
+
+
+@dataclass
+class PermissionRulesConfig:
+    """Configuration for declarative allow/deny permission rules."""
+
+    allow: list[str] = field(default_factory=list)
+    deny: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -62,10 +65,8 @@ class SecurityConfig:
     """Security configuration."""
 
     permission_mode: str = "acceptEdits"
-    allowed_paths: list[str] = field(default_factory=lambda: ["./**"])
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
-    bash: Optional[BashSecurityConfig] = None
-    mcp_tool_restrictions: dict[str, dict] = field(default_factory=dict)
+    permissions: PermissionRulesConfig = field(default_factory=PermissionRulesConfig)
 
 
 @dataclass
@@ -196,7 +197,7 @@ def _validate_config(config: HarnessConfig) -> list[str]:
         errors.append("model must be a non-empty string")
 
     # Validate permission mode
-    valid_modes = {"acceptEdits", "bypassPermissions", "plan"}
+    valid_modes = {"default", "acceptEdits", "bypassPermissions", "plan"}
     if config.security.permission_mode not in valid_modes:
         errors.append(
             f"security.permission_mode must be one of {valid_modes}, "
@@ -216,13 +217,6 @@ def _validate_config(config: HarnessConfig) -> list[str]:
         errors.append(
             f"tracking.file is required when tracking.type is {config.tracking.type!r}"
         )
-
-    # Validate builtin tools against known tools
-    for tool in config.tools.builtin:
-        if tool not in _KNOWN_BUILTIN_TOOLS:
-            errors.append(
-                f"Unknown builtin tool: {tool!r} (known tools: {sorted(_KNOWN_BUILTIN_TOOLS)})"
-            )
 
     # Validate MCP server commands are non-empty
     for name, server in config.tools.mcp_servers.items():
@@ -375,33 +369,31 @@ def load_config(
 
     # Parse security config
     sandbox_data = raw_security.get("sandbox", {})
+    network_data = sandbox_data.get("network", {})
     sandbox = SandboxConfig(
         enabled=sandbox_data.get("enabled", True),
         auto_allow_bash_if_sandboxed=sandbox_data.get(
             "auto_allow_bash_if_sandboxed", True
         ),
+        allow_unsandboxed_commands=sandbox_data.get("allow_unsandboxed_commands", False),
+        excluded_commands=sandbox_data.get("excluded_commands", []),
+        network=SandboxNetworkConfig(
+            allowed_domains=network_data.get("allowed_domains", []),
+            allow_local_binding=network_data.get("allow_local_binding", False),
+            allow_unix_sockets=network_data.get("allow_unix_sockets", []),
+        ),
     )
 
-    bash = None
-    if "bash" in raw_security:
-        bash_data = raw_security["bash"]
-        bash = BashSecurityConfig(
-            allowed_commands=bash_data.get("allowed_commands", []),
-            extra_validators={
-                name: ExtraValidatorConfig(
-                    allowed_targets=vd.get("allowed_targets", []),
-                    allowed_modes=vd.get("allowed_modes", []),
-                )
-                for name, vd in bash_data.get("extra_validators", {}).items()
-            },
-        )
+    permissions_data = raw_security.get("permissions", {})
+    permissions = PermissionRulesConfig(
+        allow=permissions_data.get("allow", []),
+        deny=permissions_data.get("deny", []),
+    )
 
     security = SecurityConfig(
         permission_mode=raw_security.get("permission_mode", "acceptEdits"),
-        allowed_paths=raw_security.get("allowed_paths", ["./**"]),
         sandbox=sandbox,
-        bash=bash,
-        mcp_tool_restrictions=raw_security.get("mcp", {}).get("tool_restrictions", {}),
+        permissions=permissions,
     )
 
     config = HarnessConfig(

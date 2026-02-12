@@ -44,6 +44,6 @@ The configuration uses two phases:
 See `.agent-harness/config.toml` for the full configuration including:
 
 - Puppeteer MCP server for browser testing
-- Bash command allowlist for security
+- Sandbox with network isolation and permission rules
 - JSON checklist tracking with `feature_list.json`
 - Two-phase agent pattern (initializer + coding)

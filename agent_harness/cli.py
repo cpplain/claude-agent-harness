@@ -10,80 +10,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
+import shutil
 import sys
 from pathlib import Path
 
-from agent_harness.config import CONFIG_DIR_NAME, DEFAULT_BUILTIN_TOOLS, DEFAULT_MODEL, ConfigError, load_config
+from agent_harness.config import CONFIG_DIR_NAME, ConfigError, load_config
 from agent_harness.runner import run_agent
 from agent_harness.verify import run_verify
-
-
-INIT_CONFIG_TEMPLATE = """\
-# Agent Harness Configuration
-# See README.md for full reference
-
-# --- Agent ---
-model = "{DEFAULT_MODEL}"
-system_prompt = "You are a helpful coding assistant."
-# Or reference a file:
-# system_prompt = "file:prompts/system.md"
-
-# --- Session ---
-max_turns = 1000
-# max_iterations = 10
-auto_continue_delay = 3
-# --- Tools ---
-[tools]
-builtin = {DEFAULT_BUILTIN_TOOLS}
-
-# [tools.mcp_servers.puppeteer]
-# command = "npx"
-# args = ["puppeteer-mcp-server"]
-
-# --- Security ---
-[security]
-permission_mode = "acceptEdits"
-
-[security.sandbox]
-enabled = true
-auto_allow_bash_if_sandboxed = true
-allow_unsandboxed_commands = false
-
-[security.sandbox.network]
-allowed_domains = ["registry.npmjs.org", "github.com"]
-allow_local_binding = false
-
-[security.permissions]
-allow = [
-    "Bash(npm *)", "Bash(node *)", "Bash(git *)",
-    "Bash(ls *)", "Bash(cat *)",
-]
-deny = ["Bash(curl *)", "Bash(wget *)"]
-
-# --- Progress Tracking ---
-[tracking]
-type = "none"
-# type = "json_checklist"
-# file = "feature_list.json"
-# passing_field = "passes"
-
-# --- Phases (optional) ---
-# [[phases]]
-# name = "initializer"
-# prompt = "file:prompts/initializer.md"
-# run_once = true
-# condition = "not_exists:.agent-harness/feature_list.json"
-#
-# [[phases]]
-# name = "coding"
-# prompt = "file:prompts/coding.md"
-
-# --- Init Files (copied to harness dir on first run) ---
-# [[init_files]]
-# source = "prompts/app_spec.txt"
-# dest = "app_spec.txt"
-"""
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -204,10 +137,10 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     harness_dir.mkdir(parents=True, exist_ok=True)
     (harness_dir / "prompts").mkdir(exist_ok=True)
-    config_file.write_text(
-        INIT_CONFIG_TEMPLATE.replace("{DEFAULT_MODEL}", DEFAULT_MODEL)
-        .replace("{DEFAULT_BUILTIN_TOOLS}", json.dumps(DEFAULT_BUILTIN_TOOLS))
-    )
+
+    # Copy template from package
+    template_path = Path(__file__).parent / "templates" / "config.toml"
+    shutil.copy(template_path, config_file)
 
     print(f"Created {harness_dir}/")
     print(f"  - config.toml (edit this to configure your project)")

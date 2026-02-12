@@ -1,0 +1,229 @@
+# Agent Harness Configuration
+#
+# This file configures the autonomous agent harness. All settings are optional
+# unless marked as required. See the config.py dataclasses for complete defaults.
+#
+# For full documentation, see: https://github.com/anthropics/claude-agent-harness
+
+# =============================================================================
+# Agent Settings
+# =============================================================================
+
+# Claude model to use for agent execution
+# Options: claude-opus-4-6, claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001
+model = "claude-sonnet-4-5-20250929"
+
+# System prompt for the agent (can reference a file with "file:prompts/system.md")
+# The system prompt sets the agent's role, constraints, and available context.
+system_prompt = "You are a helpful coding assistant."
+
+# Example using file reference:
+# system_prompt = "file:prompts/system.md"
+
+# =============================================================================
+# Session Settings
+# =============================================================================
+
+# Maximum API turns per session before auto-continuing
+# Each turn is one request-response cycle with the Claude API.
+max_turns = 1000
+
+# Maximum total sessions before stopping (default: unlimited)
+# Useful for limiting total cost or preventing infinite loops.
+# max_iterations = 10
+
+# Delay in seconds before auto-continuing to next session
+# Set to 0 to disable auto-continue and require manual restart.
+auto_continue_delay = 3
+
+# =============================================================================
+# Tools Configuration
+# =============================================================================
+
+[tools]
+# Built-in Claude SDK tools to enable
+# Available tools: Read, Write, Edit, Glob, Grep, Bash
+builtin = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
+
+# MCP (Model Context Protocol) servers to connect
+# Each server provides additional tools to the agent (browser automation, databases, etc.)
+#
+# Example: Puppeteer MCP server for browser automation
+# [tools.mcp_servers.puppeteer]
+# command = "npx"
+# args = ["puppeteer-mcp-server"]
+# env = { NODE_ENV = "production" }
+#
+# Environment variables support ${VAR} expansion:
+# env = { API_KEY = "${MY_API_KEY}" }
+
+# =============================================================================
+# Security Configuration
+# =============================================================================
+
+[security]
+# Permission mode controls how tool calls are approved
+# - "default": Prompt user for each tool call
+# - "acceptEdits": Auto-approve Read/Write/Edit, prompt for others
+# - "bypassPermissions": Auto-approve all tools (use with caution!)
+# - "plan": Agent plans before executing, user approves plan
+permission_mode = "acceptEdits"
+
+# --- OS-Level Sandbox ---
+# The SDK provides process-level isolation for Bash commands
+[security.sandbox]
+# Enable OS-level sandbox (strongly recommended)
+enabled = true
+
+# Auto-allow all Bash commands when sandbox is enabled
+# When true, the sandbox itself provides security, so individual Bash commands
+# don't need explicit permission. Set to false to require explicit allow rules.
+auto_allow_bash_if_sandboxed = true
+
+# Allow commands to run outside the sandbox (secure default: false)
+# Only enable this if you need unsandboxed execution and understand the risks.
+allow_unsandboxed_commands = false
+
+# Commands to exclude from sandboxing (even when sandbox is enabled)
+# excluded_commands = ["docker", "vagrant"]
+
+# --- Sandbox Network Restrictions ---
+# Control network access for sandboxed commands
+[security.sandbox.network]
+# Domains the agent can access via network (empty = no network access)
+# Example: Allow npm registry and GitHub
+allowed_domains = ["registry.npmjs.org", "github.com"]
+
+# Allow binding to localhost addresses (for running dev servers)
+allow_local_binding = false
+
+# Unix socket paths the agent can access
+# allow_unix_sockets = ["/var/run/docker.sock"]
+
+# --- Declarative Permission Rules ---
+# Fine-grained allow/deny rules for tool calls (evaluated by SDK before execution)
+# Rules use glob patterns: "Bash(npm *)", "Read(./**)", "Write(src/**/*.ts)"
+[security.permissions]
+# Patterns to explicitly allow
+allow = [
+  "Bash(npm *)",
+  "Bash(node *)",
+  "Bash(git *)",
+  "Bash(ls *)",
+  "Bash(cat *)",
+]
+
+# Patterns to explicitly deny (takes precedence over allow)
+# Useful for blocking dangerous commands or protecting sensitive files
+deny = ["Bash(curl *)", "Bash(wget *)"]
+
+# Example: Protect environment files
+# deny = ["Read(./.env)", "Read(./.env.*)", "Write(./.env)"]
+
+# =============================================================================
+# Progress Tracking
+# =============================================================================
+
+[tracking]
+# Tracker type controls how progress is monitored
+# - "none": No tracking, agent runs until manual stop (Ctrl+C)
+# - "json_checklist": Track completion via JSON file with boolean fields
+# - "notes_file": Track progress via plain text notes file
+type = "none"
+
+# Tracking file path (relative to .agent-harness/ directory)
+# Required when type is "json_checklist" or "notes_file"
+# file = "feature_list.json"
+
+# Field name indicating completion (for json_checklist)
+# The tracker marks tasks complete when this field is true
+# passing_field = "passes"
+
+# Example: JSON checklist tracking
+# [tracking]
+# type = "json_checklist"
+# file = "feature_list.json"
+# passing_field = "passes"
+#
+# Expected JSON format:
+# [
+#   {"name": "User authentication", "passes": false},
+#   {"name": "Dashboard UI", "passes": false}
+# ]
+
+# =============================================================================
+# Error Recovery & Circuit Breaker
+# =============================================================================
+
+[error_recovery]
+# Circuit breaker: max consecutive session errors before stopping
+# Prevents runaway API costs when sessions fail repeatedly
+max_consecutive_errors = 5
+
+# Initial backoff delay after first error (seconds)
+initial_backoff_seconds = 5.0
+
+# Maximum backoff delay (capped exponential backoff)
+max_backoff_seconds = 120.0
+
+# Multiplier for exponential backoff
+# Backoff progression: 5s → 10s → 20s → 40s → 80s → 120s (capped)
+backoff_multiplier = 2.0
+
+# =============================================================================
+# Multi-Phase Workflow (Optional)
+# =============================================================================
+
+# Phases enable multi-stage workflows with different prompts and conditions
+# Each phase creates a fresh SDK session with its own prompt and context
+#
+# Example: Two-phase workflow (initializer + coding)
+#
+# [[phases]]
+# name = "initializer"
+# prompt = "file:prompts/initializer.md"
+# run_once = true
+# condition = "not_exists:.agent-harness/feature_list.json"
+#
+# [[phases]]
+# name = "coding"
+# prompt = "file:prompts/coding.md"
+#
+# Phase options:
+# - name: Phase identifier (required, must be unique)
+# - prompt: Phase prompt (required, supports "file:" references)
+# - run_once: Only execute this phase once across all sessions (default: false)
+# - condition: Path-based condition for running phase (optional)
+#   - "exists:path/to/file": Run only if path exists
+#   - "not_exists:path/to/file": Run only if path does not exist
+
+# =============================================================================
+# Init Files (Optional)
+# =============================================================================
+
+# Files to copy to .agent-harness/ directory on first run
+# Useful for providing specifications or reference documents to the agent
+#
+# Example: Copy app specification
+#
+# [[init_files]]
+# source = "prompts/app_spec.txt"
+# dest = "app_spec.txt"
+#
+# Init file options:
+# - source: Source file path (required, relative to .agent-harness/)
+# - dest: Destination file path (required, relative to .agent-harness/)
+
+# =============================================================================
+# Post-Run Instructions (Optional)
+# =============================================================================
+
+# Commands to display in the final summary banner after agent completes
+# Helpful for showing users what to do next (install deps, start dev server, etc.)
+#
+# Example:
+# post_run_instructions = [
+#     "npm install",
+#     "npm run dev",
+#     "Open http://localhost:3000",
+# ]

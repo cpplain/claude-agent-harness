@@ -15,63 +15,10 @@ from unittest.mock import patch, MagicMock
 from agent_harness.config import (
     HarnessConfig,
     McpServerConfig,
-    PermissionRulesConfig,
-    SandboxConfig,
     SecurityConfig,
     ToolsConfig,
 )
-from agent_harness.client_factory import (
-    _write_settings,
-    create_client,
-)
-
-
-class TestWriteSettings(unittest.TestCase):
-    """Test settings file writing."""
-
-    def test_writes_json_file(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir()
-            config = HarnessConfig(harness_dir=config_dir)
-            settings_file = _write_settings(config)
-            self.assertTrue(settings_file.exists())
-            data = json.loads(settings_file.read_text())
-            # Settings file now only contains permissions
-            self.assertIn("permissions", data)
-            self.assertIn("allow", data["permissions"])
-            self.assertIn("deny", data["permissions"])
-
-    def test_writes_to_config_dir(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir()
-            config = HarnessConfig(harness_dir=config_dir)
-            settings_file = _write_settings(config)
-            self.assertEqual(settings_file, config_dir / ".claude_settings.json")
-
-    def test_write_settings_skips_unchanged(self) -> None:
-        """Test that _write_settings doesn't rewrite file when content is unchanged."""
-        import time
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir()
-            config = HarnessConfig(harness_dir=config_dir)
-
-            # First write
-            settings_file = _write_settings(config)
-            self.assertTrue(settings_file.exists())
-
-            # Record mtime (wait briefly to ensure any write would change mtime)
-            first_mtime = os.path.getmtime(settings_file)
-            time.sleep(0.01)  # 10ms to ensure mtime resolution
-
-            # Second write with same config
-            _write_settings(config)
-            second_mtime = os.path.getmtime(settings_file)
-
-            # File should not have been rewritten (mtime unchanged)
-            self.assertEqual(first_mtime, second_mtime)
+from agent_harness.client_factory import create_client
 
 
 class TestCreateClient(unittest.TestCase):
@@ -177,6 +124,32 @@ class TestCreateClient(unittest.TestCase):
             options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
             self.assertIsNotNone(options.mcp_servers)
             self.assertIn("puppeteer", options.mcp_servers)
+
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test-key"})
+    @patch("agent_harness.client_factory.ClaudeSDKClient")
+    def test_settings_passed_as_json_string(self, mock_client_cls: MagicMock) -> None:
+        """Test that settings are passed as a JSON string, not a file path."""
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / ".agent-harness"
+            config_dir.mkdir()
+            config = HarnessConfig(
+                harness_dir=config_dir,
+                project_dir=Path(tmpdir),
+            )
+            create_client(config)
+            call_kwargs = mock_client_cls.call_args
+            options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
+
+            # Verify settings is a JSON string, not a file path
+            self.assertIsInstance(options.settings, str)
+            self.assertTrue(options.settings.startswith("{"))
+            self.assertTrue(options.settings.endswith("}"))
+
+            # Verify it parses as valid JSON with expected structure
+            settings = json.loads(options.settings)
+            self.assertIn("permissions", settings)
+            self.assertIn("allow", settings["permissions"])
+            self.assertIn("deny", settings["permissions"])
 
 
 if __name__ == "__main__":

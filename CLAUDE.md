@@ -33,16 +33,19 @@ No linter or formatter is configured. Tests use `unittest` from the standard lib
 
 ## Architecture
 
-The system runs an async loop that executes **phases** sequentially. Each phase creates a fresh Claude SDK session (no context carryover) with a configured prompt. Phases can be `run_once` (skipped after first completion) and have path-based conditions (`exists:`, `not_exists:`). Session state (completed phases, error context) persists in `.agent-harness/session.json`.
+The system runs an async loop that executes **phases** sequentially. Each phase creates a fresh Claude SDK session (no context carryover) with a configured prompt. Phases can be `run_once` (skipped after first completion) and have path-based conditions (`exists:`, `not_exists:`). Session state (completed phases) persists in `.agent-harness/session.json`.
 
 ### Module Dependency Flow
 
-```
-cli.py → config.py → runner.py → client_factory.py → Claude SDK
-                         ↓
-                    tracking.py
-                    prompts.py
-```
+**cli.py** orchestrates three main modules:
+
+- **config.py** — loads and validates configuration (foundational, no internal imports)
+- **runner.py** — executes the agent loop (uses config.py, client_factory.py, tracking.py)
+- **verify.py** — runs setup checks (uses config.py)
+
+**client_factory.py** builds SDK clients using config.py settings and passes them to the Claude SDK.
+
+**tracking.py** is standalone with no internal imports.
 
 **cli.py** — Argument parsing for 3 subcommands: `run`, `verify`, `init`. Entry point via `python -m agent_harness`.
 
@@ -54,7 +57,7 @@ cli.py → config.py → runner.py → client_factory.py → Claude SDK
 
 **tracking.py** — Progress monitoring with 3 implementations: `JsonChecklistTracker` (JSON array with boolean `passes` field), `NotesFileTracker` (plain text), `NoneTracker`.
 
-**verify.py** — Runs 11 setup checks (Python version, SDK installed, CLI available, auth, API connectivity, config validity, MCP commands, directory permissions).
+**verify.py** — Runs up to 10 setup checks (Python version, SDK installed, CLI available, auth, API connectivity, config exists, config valid, file references, MCP commands, directory permissions).
 
 ## Key Patterns
 
@@ -77,4 +80,4 @@ Required reading:
 
 ## Dependencies
 
-Single runtime dependency: `claude-agent-sdk>=0.1.0` (plus `tomli` backport for Python <3.11). The SDK provides `ClaudeSDKClient`, message/block types, hook matchers, and built-in tools.
+Single runtime dependency: `claude-agent-sdk>=0.1.0` (plus `tomli` backport for Python <3.11). The SDK provides `ClaudeSDKClient`, message/block types, and built-in tools.

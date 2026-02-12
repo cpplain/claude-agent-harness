@@ -163,7 +163,7 @@ The harness executes agents in configurable phases with conditions and run-once 
   - Session state file (`session.json`) tracking completed phases
   - Git commits preserving code changes
 - **Auto-continue**: Sessions auto-resume after configured delay (default 3s)
-- **Completion detection**: Harness stops automatically when `tracker.is_complete()` returns `true` (all features passing)
+- **Completion detection**: Harness stops automatically when `tracker.is_complete()` returns `true` (only `json_checklist` supports this; `notes_file` and `none` trackers require manual stop via Ctrl+C)
 - Press `Ctrl+C` to pause; run same command to resume
 
 ### Error Recovery & Circuit Breaker
@@ -171,7 +171,7 @@ The harness executes agents in configurable phases with conditions and run-once 
 Prevents runaway API costs when sessions fail repeatedly:
 
 - Tracks consecutive errors across sessions
-- **Exponential backoff**: 5s → 10s → 20s → 40s → 120s (capped)
+- **Exponential backoff**: 5s → 10s → 20s → 40s → 80s (circuit breaker trips; max cap 120s)
 - **Circuit breaker**: Trips after 5 consecutive errors (configurable)
 - Successful session resets error counter
 - Error context forwarded to next session to help recovery
@@ -230,7 +230,8 @@ Permission rules are evaluated by the SDK before tool execution. The agent canno
 ### Secure Defaults
 
 - `allow_unsandboxed_commands` defaults to `false`
-- No commands are allowed by default (explicit allowlist required)
+- When sandbox is enabled, `auto_allow_bash_if_sandboxed=true` auto-allows Bash commands
+- When sandbox is disabled, explicit `permissions.allow` rules are required
 - Network access is denied by default
 
 ### Git Protection Recommendations
@@ -490,8 +491,6 @@ claude-agent-harness/
 │   ├── cli.py              # Argument parsing, subcommands
 │   ├── client_factory.py   # Builds ClaudeSDKClient from config
 │   ├── config.py           # Config loading, validation, HarnessConfig
-│   ├── display.py          # Console output formatting
-│   ├── prompts.py          # Prompt loading with file: resolution
 │   ├── runner.py           # Generic agent loop
 │   ├── tracking.py         # Progress tracking implementations
 │   └── verify.py           # Setup verification checks
@@ -505,6 +504,7 @@ claude-agent-harness/
 │       │   └── config.toml
 │       └── README.md
 ├── tests/
+│   ├── test_cli.py
 │   ├── test_client_factory.py
 │   ├── test_config.py
 │   ├── test_prompts.py

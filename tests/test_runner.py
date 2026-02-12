@@ -517,8 +517,8 @@ class TestRunAgentSession(unittest.TestCase):
         # Check that exception was logged
         self.assertTrue(any("Error during agent session" in msg for msg in cm.output))
 
-    def test_exception_includes_traceback(self) -> None:
-        """Test that exception logging includes full traceback."""
+    def test_exception_calls_logger_exception(self) -> None:
+        """Test that exception handler uses logger.exception instead of logger.error."""
         mock_client = MagicMock()
         mock_client.query = AsyncMock(side_effect=RuntimeError("Runtime error"))
 

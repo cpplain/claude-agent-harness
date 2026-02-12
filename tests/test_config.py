@@ -41,11 +41,6 @@ class TestConfigDefaults(unittest.TestCase):
         config = HarnessConfig()
         self.assertEqual(config.tools.builtin, DEFAULT_BUILTIN_TOOLS)
 
-    def test_default_tools_equals_constant(self) -> None:
-        """Test that default builtin tools matches the constant."""
-        config = HarnessConfig()
-        self.assertEqual(config.tools.builtin, DEFAULT_BUILTIN_TOOLS)
-
     def test_default_security(self) -> None:
         config = HarnessConfig()
         self.assertEqual(config.security.permission_mode, "acceptEdits")

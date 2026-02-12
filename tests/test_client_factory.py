@@ -2,7 +2,7 @@
 Client Factory Tests
 ====================
 
-Tests for client creation, settings generation, and hook installation.
+Tests for client creation, settings generation, and sandbox/permission configuration.
 """
 
 import json

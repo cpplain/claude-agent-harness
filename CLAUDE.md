@@ -8,7 +8,23 @@ Agent Harness is a configurable harness for long-running autonomous coding agent
 
 ## Commands
 
-This project uses `uv` for dependency management. All `python` commands should be run via `uv run`.
+```bash
+# Install globally
+uv tool install .
+
+# Run commands
+agent-harness init --project-dir ./my-project
+agent-harness verify --project-dir ./my-project
+agent-harness run --project-dir ./my-project
+```
+
+For development without installing:
+
+```bash
+uv run python -m agent_harness <command> --project-dir ./my-project
+```
+
+For testing, this project uses `uv` for dependency management:
 
 ```bash
 # Install dependencies
@@ -22,11 +38,6 @@ uv run python -m unittest tests.test_config -v
 
 # Run a single test
 uv run python -m unittest tests.test_config.TestConfigDefaults.test_default_model -v
-
-# Run the agent
-uv run python -m agent_harness run --project-dir ./my-project
-uv run python -m agent_harness verify --project-dir ./my-project
-uv run python -m agent_harness init --project-dir ./my-project
 ```
 
 No linter or formatter is configured. Tests use `unittest` from the standard library (no pytest).
@@ -47,7 +58,7 @@ The system runs an async loop that executes **phases** sequentially. Each phase 
 
 **tracking.py** is standalone with no internal imports.
 
-**cli.py** — Argument parsing for 3 subcommands: `run`, `verify`, `init`. Entry point via `python -m agent_harness`.
+**cli.py** — Argument parsing for 3 subcommands: `run`, `verify`, `init`. Entry point via `agent-harness` CLI.
 
 **config.py** — Loads `.agent-harness/config.toml` into dataclasses. Resolves `file:prompts/foo.md` references to file contents. Validates permission modes, tracking types, phase names, and file paths.
 

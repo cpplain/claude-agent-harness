@@ -93,7 +93,6 @@ uv run python -m agent_harness init --project-dir <path>
 
 # Global flags (all commands)
 --project-dir PATH      # Agent's working directory (default: .)
---harness-dir PATH      # Path to .agent-harness/ (default: project-dir/.agent-harness/)
 
 # Run command options
 --max-iterations N      # Override max iterations (default: from config)
@@ -274,9 +273,9 @@ See [`examples/claude-ai-clone/`](examples/claude-ai-clone/) for a complete exam
 
 ```bash
 # Run the Claude.ai clone example
-uv run python -m agent_harness run \
-    --project-dir ./my-clone-output \
-    --harness-dir examples/claude-ai-clone/.agent-harness
+mkdir -p ./my-clone-output
+cp -r examples/claude-ai-clone/.agent-harness ./my-clone-output/
+uv run python -m agent_harness run --project-dir ./my-clone-output
 ```
 
 ## Troubleshooting
@@ -287,7 +286,6 @@ The harness expects a `.agent-harness/config.toml` file in your project director
 
 1. Check that you're running from the correct directory
 2. Use `uv run python -m agent_harness init --project-dir ./my-project` to scaffold a new configuration
-3. If using `--harness-dir`, verify the path points to a directory containing `config.toml`
 
 ### "Prompt file not found"
 

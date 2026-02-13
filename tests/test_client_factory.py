@@ -148,6 +148,12 @@ class TestCreateClient(unittest.TestCase):
             create_client(config)
             mock_client_cls.assert_called_once()
 
+            # Verify options are passed correctly
+            call_kwargs = mock_client_cls.call_args
+            options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
+            self.assertEqual(options.permission_mode, "acceptEdits")
+            self.assertTrue(options.sandbox["enabled"])
+
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test-key"})
     @patch("agent_harness.client_factory.ClaudeSDKClient")
     def test_settings_passed_as_json_string(self, mock_client_cls: MagicMock) -> None:

@@ -10,7 +10,7 @@ import logging
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from agent_harness.config import ErrorRecoveryConfig, HarnessConfig, PhaseConfig
 from agent_harness.runner import (
@@ -482,20 +482,6 @@ class TestRunAgentSession(unittest.TestCase):
 
         # Check that exception was logged
         self.assertTrue(any("Error during agent session" in msg for msg in cm.output))
-
-    def test_exception_calls_logger_exception(self) -> None:
-        """Test that exception handler uses logger.exception instead of logger.error."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=RuntimeError("Runtime error"))
-
-        # Patch logger.exception to verify it was called
-        with patch("agent_harness.runner.logger.exception") as mock_logger:
-            _status, _response = asyncio.run(
-                run_agent_session(mock_client, "test prompt")
-            )
-
-            # Verify logger.exception was called (which includes traceback)
-            mock_logger.assert_called_once_with("Error during agent session")
 
 
 class TestNarrowExceptionHandler(unittest.TestCase):

@@ -5,13 +5,13 @@ Your job is to set up the foundation for all future coding agents.
 
 ### FIRST: Read the Project Specification
 
-Start by reading `.agent-harness/app_spec.txt` in your working directory. This file contains
+Start by reading `.agent-harness/spec.md` in your working directory. This file contains
 the complete specification for what you need to build. Read it carefully
 before proceeding.
 
 ### CRITICAL FIRST TASK: Create .agent-harness/feature_list.json
 
-Based on `.agent-harness/app_spec.txt`, create a file called `.agent-harness/feature_list.json` with 200 detailed
+Based on `.agent-harness/spec.md`, create a file called `.agent-harness/feature_list.json` with 200 detailed
 end-to-end test cases. This file is the single source of truth for what
 needs to be built.
 
@@ -67,7 +67,7 @@ set up and run the development environment. The script should:
 2. Start any necessary servers or services
 3. Print helpful information about how to access the running application
 
-Base the script on the technology stack specified in `.agent-harness/app_spec.txt`.
+Base the script on the technology stack specified in `.agent-harness/spec.md`.
 
 ### THIRD TASK: Initialize Git
 
@@ -81,7 +81,7 @@ Commit message: "Initial setup: .agent-harness/feature_list.json, init.sh, and p
 
 ### FOURTH TASK: Create Project Structure
 
-Set up the basic project structure based on what's specified in `.agent-harness/app_spec.txt`.
+Set up the basic project structure based on what's specified in `.agent-harness/spec.md`.
 This typically includes directories for frontend, backend, and any other
 components mentioned in the spec.
 

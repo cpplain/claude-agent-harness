@@ -234,19 +234,6 @@ passing_field = "passes"
             self.assertEqual(config.tracking.type, "json_checklist")
             self.assertEqual(config.tracking.file, "feature_list.json")
 
-    def test_init_files_config(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            toml_content = """
-[[init_files]]
-source = "prompts/app_spec.txt"
-dest = "app_spec.txt"
-"""
-            project_dir = self._write_config(tmpdir, toml_content)
-            config = load_config(project_dir)
-            self.assertEqual(len(config.init_files), 1)
-            self.assertEqual(config.init_files[0].source, "prompts/app_spec.txt")
-            self.assertEqual(config.init_files[0].dest, "app_spec.txt")
-
     def test_error_recovery_config(self) -> None:
         with TemporaryDirectory() as tmpdir:
             toml_content = """
@@ -328,17 +315,6 @@ name = "init"
             with self.assertRaises(ConfigError) as ctx:
                 load_config(project_dir)
             self.assertIn("phases[0].prompt", str(ctx.exception))
-
-    def test_init_file_missing_source(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            toml_content = """
-[[init_files]]
-dest = "app_spec.txt"
-"""
-            project_dir = self._write_config(tmpdir, toml_content)
-            with self.assertRaises(ConfigError) as ctx:
-                load_config(project_dir)
-            self.assertIn("init_files[0].source", str(ctx.exception))
 
     def test_phase_invalid_condition_prefix(self) -> None:
         with TemporaryDirectory() as tmpdir:

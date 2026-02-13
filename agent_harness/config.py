@@ -29,7 +29,7 @@ else:
 CONFIG_DIR_NAME = ".agent-harness"
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 DEFAULT_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
-_KNOWN_TOP_LEVEL_KEYS = {"model", "system_prompt", "max_turns", "max_iterations", "auto_continue_delay", "tools", "security", "tracking", "error_recovery", "phases", "init_files", "post_run_instructions"}
+_KNOWN_TOP_LEVEL_KEYS = {"model", "system_prompt", "max_turns", "max_iterations", "auto_continue_delay", "tools", "security", "tracking", "error_recovery", "phases", "post_run_instructions"}
 
 
 @dataclass
@@ -108,14 +108,6 @@ class PhaseConfig:
 
 
 @dataclass
-class InitFileConfig:
-    """Configuration for a file to copy on first run."""
-
-    source: str = ""
-    dest: str = ""
-
-
-@dataclass
 class ErrorRecoveryConfig:
     """Configuration for error recovery behavior."""
 
@@ -151,9 +143,6 @@ class HarnessConfig:
 
     # Phases
     phases: list[PhaseConfig] = field(default_factory=list)
-
-    # Init files
-    init_files: list[InitFileConfig] = field(default_factory=list)
 
     # Post-run instructions
     post_run_instructions: list[str] = field(default_factory=list)
@@ -240,13 +229,6 @@ def _validate_config(config: HarnessConfig) -> list[str]:
                 f"phases[{i}].condition must start with one of ('exists:', 'not_exists:'), "
                 f"got: {phase.condition!r}"
             )
-
-    # Validate init files have source and dest
-    for i, init_file in enumerate(config.init_files):
-        if not init_file.source:
-            errors.append(f"init_files[{i}].source is required")
-        if not init_file.dest:
-            errors.append(f"init_files[{i}].dest is required")
 
     # Validate max_turns
     if not isinstance(config.max_turns, int):
@@ -420,13 +402,6 @@ def load_config(
                 condition=p.get("condition", ""),
             )
             for p in raw.get("phases", [])
-        ],
-        init_files=[
-            InitFileConfig(
-                source=f.get("source", ""),
-                dest=f.get("dest", ""),
-            )
-            for f in raw.get("init_files", [])
         ],
         post_run_instructions=raw.get("post_run_instructions", []),
         project_dir=project_dir,

@@ -200,12 +200,12 @@ Configuration lives in `.agent-harness/config.toml`.
 project_dir/
 ├── .agent-harness/
 │   ├── logs/                  # Session logs (auto-created, gitignored)
-│   ├── prompts/               # Prompt files (referenced by config)
-│   │   ├── app_spec.txt
-│   │   ├── coding.md
-│   │   └── initializer.md
 │   ├── config.toml            # Main configuration (required)
-│   └── session.json           # Session number, completed phases (auto-created)
+│   ├── spec.md                # Project specification
+│   ├── session.json           # Session number, completed phases (auto-created)
+│   └── prompts/               # Prompt files (referenced by config)
+│       ├── init.md
+│       └── build.md
 └── (generated code lives here)
 ```
 
@@ -240,13 +240,21 @@ claude-agent-harness/
 │   ├── tracking.py         # Progress tracking implementations
 │   └── verify.py           # Setup verification checks
 ├── examples/
-│   └── claude-ai-clone/
+│   ├── claude-ai-clone/
+│   │   ├── .agent-harness/
+│   │   │   ├── config.toml
+│   │   │   ├── spec.md
+│   │   │   └── prompts/
+│   │   │       ├── init.md
+│   │   │       └── build.md
+│   │   └── README.md
+│   └── simple-calculator/
 │       ├── .agent-harness/
-│       │   ├── prompts/
-│       │   │   ├── app_spec.txt
-│       │   │   ├── coding.md
-│       │   │   └── initializer.md
-│       │   └── config.toml
+│       │   ├── config.toml
+│       │   ├── spec.md
+│       │   └── prompts/
+│       │       ├── init.md
+│       │       └── build.md
 │       └── README.md
 ├── tests/
 │   ├── test_cli.py
@@ -277,6 +285,15 @@ mkdir -p ./my-clone-output
 cp -r examples/claude-ai-clone/.agent-harness ./my-clone-output/
 uv run python -m agent_harness run --project-dir ./my-clone-output
 ```
+
+### Simple Calculator (Python)
+
+See [`examples/simple-calculator/`](examples/simple-calculator/) for a minimal example that:
+
+- Uses Python stdlib only (no external dependencies)
+- Completes in ~5 minutes (good for demos)
+- Shows basic two-phase workflow (init + build)
+- Tracks progress via `feature_list.json`
 
 ## Troubleshooting
 

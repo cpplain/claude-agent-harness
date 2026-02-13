@@ -33,9 +33,9 @@ uv run python -m agent_harness run --project-dir ./my-claude-clone --max-iterati
 
 The configuration uses two phases:
 
-1. **Initializer** (runs once): Reads `app_spec.txt`, creates `feature_list.json` with 200+ test cases, sets up project structure, initializes git.
+1. **Init** (runs once): Reads `spec.md`, creates `feature_list.json` with 200+ test cases, sets up project structure, initializes git.
 
-2. **Coding** (runs repeatedly): Picks up from the previous session, implements features one at a time, verifies through browser automation, marks tests as passing.
+2. **Build** (runs repeatedly): Picks up from the previous session, implements features one at a time, verifies through browser automation, marks tests as passing.
 
 ## Configuration
 
@@ -44,4 +44,4 @@ See `.agent-harness/config.toml` for the full configuration including:
 - Puppeteer MCP server for browser testing
 - Sandbox with network isolation and permission rules
 - JSON checklist tracking with `feature_list.json`
-- Two-phase agent pattern (initializer + coding)
+- Two-phase agent pattern (init + build)

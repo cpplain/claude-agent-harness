@@ -169,22 +169,8 @@ def check_config_valid(project_dir: Path) -> tuple[CheckResult, Optional[Harness
 
 def check_file_references(config: HarnessConfig) -> CheckResult:
     """Check that all file: references point to existing files."""
-    missing = []
-
-    # Check system_prompt (already resolved by load_config, but we check the raw TOML)
-    # Since load_config already resolved them, if we got here they're valid.
-    # But we can check init_files sources
-    for init_file in config.init_files:
-        source = config.harness_dir / init_file.source
-        if not source.exists():
-            missing.append(str(source))
-
-    if missing:
-        return CheckResult(
-            "File references",
-            "FAIL",
-            f"Missing: {', '.join(missing)}",
-        )
+    # All file: references are already resolved and validated by load_config
+    # If we got here, they're all valid
     return CheckResult("File references", "PASS")
 
 

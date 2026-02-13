@@ -12,7 +12,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
-from agent_harness.config import HarnessConfig, McpServerConfig, ToolsConfig, InitFileConfig
+from agent_harness.config import HarnessConfig, McpServerConfig, ToolsConfig
 from agent_harness.verify import (
     check_api_connectivity,
     check_authentication,
@@ -116,36 +116,6 @@ class TestCheckConfigValid(unittest.TestCase):
             result, config = check_config_valid(Path(tmpdir))
             self.assertEqual(result.status, "FAIL")
             self.assertIsNone(config)
-
-
-class TestCheckFileReferences(unittest.TestCase):
-    def test_no_init_files(self) -> None:
-        config = HarnessConfig(harness_dir=Path("/tmp"))
-        result = check_file_references(config)
-        self.assertEqual(result.status, "PASS")
-
-    def test_missing_init_file_source(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir()
-            config = HarnessConfig(
-                harness_dir=config_dir,
-                init_files=[InitFileConfig(source="missing.txt", dest="out.txt")],
-            )
-            result = check_file_references(config)
-            self.assertEqual(result.status, "FAIL")
-
-    def test_existing_init_file_source(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir()
-            (config_dir / "spec.txt").write_text("content")
-            config = HarnessConfig(
-                harness_dir=config_dir,
-                init_files=[InitFileConfig(source="spec.txt", dest="out.txt")],
-            )
-            result = check_file_references(config)
-            self.assertEqual(result.status, "PASS")
 
 
 class TestCheckMcpCommands(unittest.TestCase):

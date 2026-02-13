@@ -175,17 +175,17 @@ backoff_multiplier = 2.0
 # Phases enable multi-stage workflows with different prompts and conditions
 # Each phase creates a fresh SDK session with its own prompt and context
 #
-# Example: Two-phase workflow (initializer + coding)
+# Example: Two-phase workflow (init + build)
 #
 # [[phases]]
-# name = "initializer"
-# prompt = "file:prompts/initializer.md"
+# name = "init"
+# prompt = "file:prompts/init.md"
 # run_once = true
 # condition = "not_exists:.agent-harness/feature_list.json"
 #
 # [[phases]]
-# name = "coding"
-# prompt = "file:prompts/coding.md"
+# name = "build"
+# prompt = "file:prompts/build.md"
 #
 # Phase options:
 # - name: Phase identifier (required, must be unique)
@@ -194,23 +194,6 @@ backoff_multiplier = 2.0
 # - condition: Path-based condition for running phase (optional)
 #   - "exists:path/to/file": Run only if path exists
 #   - "not_exists:path/to/file": Run only if path does not exist
-
-# =============================================================================
-# Init Files (Optional)
-# =============================================================================
-
-# Files to copy to .agent-harness/ directory on first run
-# Useful for providing specifications or reference documents to the agent
-#
-# Example: Copy app specification
-#
-# [[init_files]]
-# source = "prompts/app_spec.txt"
-# dest = "app_spec.txt"
-#
-# Init file options:
-# - source: Source file path (required, relative to .agent-harness/)
-# - dest: Destination file path (required, relative to .agent-harness/)
 
 # =============================================================================
 # Post-Run Instructions (Optional)

@@ -204,6 +204,18 @@ def _validate_config(config: HarnessConfig) -> list[str]:
             f"got: {config.security.permission_mode!r}"
         )
 
+    # Validate permission rules are lists
+    if not isinstance(config.security.permissions.allow, list):
+        errors.append(
+            f"security.permissions.allow must be a list, "
+            f"got: {type(config.security.permissions.allow).__name__}"
+        )
+    if not isinstance(config.security.permissions.deny, list):
+        errors.append(
+            f"security.permissions.deny must be a list, "
+            f"got: {type(config.security.permissions.deny).__name__}"
+        )
+
     # Validate tracking type
     valid_tracking = {"json_checklist", "notes_file", "none"}
     if config.tracking.type not in valid_tracking:
@@ -218,10 +230,21 @@ def _validate_config(config: HarnessConfig) -> list[str]:
             f"tracking.file is required when tracking.type is {config.tracking.type!r}"
         )
 
-    # Validate MCP server commands are non-empty
+    # Validate tools.builtin is a list
+    if not isinstance(config.tools.builtin, list):
+        errors.append(
+            f"tools.builtin must be a list, got: {type(config.tools.builtin).__name__}"
+        )
+
+    # Validate MCP server commands are non-empty and args are lists
     for name, server in config.tools.mcp_servers.items():
         if not isinstance(server.command, str) or not server.command:
             errors.append(f"tools.mcp_servers.{name}.command must be a non-empty string")
+        if not isinstance(server.args, list):
+            errors.append(
+                f"tools.mcp_servers.{name}.args must be a list, "
+                f"got: {type(server.args).__name__}"
+            )
 
     # Validate phases have names, prompts, and valid conditions
     phase_names = set()
@@ -266,6 +289,34 @@ def _validate_config(config: HarnessConfig) -> list[str]:
             errors.append(f"max_iterations must be an integer, got: {type(config.max_iterations).__name__}")
         elif config.max_iterations <= 0:
             errors.append("max_iterations must be positive when set")
+
+    # Validate post_run_instructions is a list
+    if not isinstance(config.post_run_instructions, list):
+        errors.append(
+            f"post_run_instructions must be a list, "
+            f"got: {type(config.post_run_instructions).__name__}"
+        )
+
+    # Validate sandbox excluded_commands is a list
+    if not isinstance(config.security.sandbox.excluded_commands, list):
+        errors.append(
+            f"security.sandbox.excluded_commands must be a list, "
+            f"got: {type(config.security.sandbox.excluded_commands).__name__}"
+        )
+
+    # Validate sandbox network allowed_domains is a list
+    if not isinstance(config.security.sandbox.network.allowed_domains, list):
+        errors.append(
+            f"security.sandbox.network.allowed_domains must be a list, "
+            f"got: {type(config.security.sandbox.network.allowed_domains).__name__}"
+        )
+
+    # Validate sandbox network allow_unix_sockets is a list
+    if not isinstance(config.security.sandbox.network.allow_unix_sockets, list):
+        errors.append(
+            f"security.sandbox.network.allow_unix_sockets must be a list, "
+            f"got: {type(config.security.sandbox.network.allow_unix_sockets).__name__}"
+        )
 
     # Validate error recovery settings
     if not isinstance(config.error_recovery.max_consecutive_errors, int):

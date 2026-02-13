@@ -880,6 +880,51 @@ builtin = ["Read", "Write", "Edit", "Bash", "LSP", "WebSearch"]
             config = load_config(project_dir)
             self.assertEqual(config.tools.builtin, ["Read", "Write", "Edit", "Bash", "LSP", "WebSearch"])
 
+    def test_post_run_instructions_string_raises(self) -> None:
+        """Test that post_run_instructions as string raises validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = 'post_run_instructions = "npm install"'
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("post_run_instructions must be a list", str(ctx.exception))
+
+    def test_excluded_commands_string_raises(self) -> None:
+        """Test that security.sandbox.excluded_commands as string raises validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[security.sandbox]
+excluded_commands = "rm"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("security.sandbox.excluded_commands must be a list", str(ctx.exception))
+
+    def test_allowed_domains_string_raises(self) -> None:
+        """Test that security.sandbox.network.allowed_domains as string raises validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[security.sandbox.network]
+allowed_domains = "example.com"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("security.sandbox.network.allowed_domains must be a list", str(ctx.exception))
+
+    def test_allow_unix_sockets_string_raises(self) -> None:
+        """Test that security.sandbox.network.allow_unix_sockets as string raises validation error."""
+        with TemporaryDirectory() as tmpdir:
+            toml_content = """
+[security.sandbox.network]
+allow_unix_sockets = "/tmp/socket"
+"""
+            project_dir = self._write_config(tmpdir, toml_content)
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(project_dir)
+            self.assertIn("security.sandbox.network.allow_unix_sockets must be a list", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

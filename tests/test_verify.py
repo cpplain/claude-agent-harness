@@ -133,7 +133,7 @@ class TestCheckFileReferences(unittest.TestCase):
                 init_files=[InitFileConfig(source="missing.txt", dest="out.txt")],
             )
             result = check_file_references(config)
-            self.assertEqual(result.status, "FAIL")
+            self.assertEqual(result.status, "WARN")
 
     def test_existing_init_file_source(self) -> None:
         with TemporaryDirectory() as tmpdir:

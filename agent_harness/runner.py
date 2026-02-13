@@ -57,6 +57,10 @@ def _load_session_state(config: HarnessConfig) -> dict:
             if not isinstance(state, dict):
                 logger.warning("Corrupt session state (non-dict JSON), starting fresh")
                 return {"session_number": 0, "completed_phases": []}
+            # Validate completed_phases is a list
+            if not isinstance(state.get("completed_phases"), list):
+                logger.warning("Corrupt session state (completed_phases not a list), starting fresh")
+                return {"session_number": 0, "completed_phases": []}
         except (json.JSONDecodeError, IOError) as e:
             logger.warning("Corrupt session state (%s), starting fresh", e)
             return {"session_number": 0, "completed_phases": []}
@@ -91,8 +95,8 @@ def _save_session_state(config: HarnessConfig, state: dict) -> None:
             with os.fdopen(fd, 'w') as f:
                 f.write(json.dumps(state, indent=2))
 
-            # Atomic rename
-            os.rename(temp_path, state_file)
+            # Atomic rename (os.replace works cross-platform, unlike os.rename)
+            os.replace(temp_path, state_file)
         except:
             # Clean up temp file on error
             try:

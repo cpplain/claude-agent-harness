@@ -182,8 +182,8 @@ def check_file_references(config: HarnessConfig) -> CheckResult:
     if missing:
         return CheckResult(
             "File references",
-            "FAIL",
-            f"Missing: {', '.join(missing)}",
+            "WARN",
+            f"Missing (will be skipped): {', '.join(missing)}",
         )
     return CheckResult("File references", "PASS")
 

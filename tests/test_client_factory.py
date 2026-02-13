@@ -130,6 +130,7 @@ class TestCreateClient(unittest.TestCase):
             options = call_kwargs.kwargs.get("options") or call_kwargs.args[0]
             self.assertIsNotNone(options.mcp_servers)
             self.assertIn("puppeteer", options.mcp_servers)
+            self.assertNotIn("env", options.mcp_servers["puppeteer"])
 
     @patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "oauth-token-test"})
     @patch("agent_harness.client_factory.ClaudeSDKClient")
@@ -172,6 +173,8 @@ class TestCreateClient(unittest.TestCase):
             self.assertIn("permissions", settings)
             self.assertIn("allow", settings["permissions"])
             self.assertIn("deny", settings["permissions"])
+            self.assertEqual(settings["permissions"]["allow"], [])
+            self.assertEqual(settings["permissions"]["deny"], [])
 
 
 if __name__ == "__main__":

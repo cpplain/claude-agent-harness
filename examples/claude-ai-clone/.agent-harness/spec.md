@@ -1,5 +1,5 @@
 <project_specification>
-  <project_name>Claude.ai Clone - AI Chat Interface</project_name>
+<project_name>Claude.ai Clone - AI Chat Interface</project_name>
 
   <overview>
     Build a fully functional clone of claude.ai, Anthropic's conversational AI interface. The application should
@@ -9,31 +9,31 @@
     user experience and responsive design.
   </overview>
 
-  <technology_stack>
-    <api_key>
-        You can use an API key located at /tmp/api-key for testing. You will not be allowed to read this file, but you can reference it in code.
-    </api_key>
-    <frontend>
-      <framework>React with Vite</framework>
-      <styling>Tailwind CSS (via CDN)</styling>
-      <state_management>React hooks and context</state_management>
-      <routing>React Router for navigation</routing>
-      <markdown>React Markdown for message rendering</markdown>
-      <code_highlighting>Syntax highlighting for code blocks</code_highlighting>
-      <port>Only launch on port {frontend_port}</port>
-    </frontend>
-    <backend>
-      <runtime>Node.js with Express</runtime>
-      <database>SQLite with better-sqlite3</database>
-      <api_integration>Claude API for chat completions</api_integration>
-      <streaming>Server-Sent Events for streaming responses</streaming>
-    </backend>
-    <communication>
-      <api>RESTful endpoints</api>
-      <streaming>SSE for real-time message streaming</streaming>
-      <claude_api>Integration with Claude API using Anthropic SDK</claude_api>
-    </communication>
-  </technology_stack>
+<technology_stack>
+<api_key>
+You can use an API key located at /tmp/api-key for testing. You will not be allowed to read this file, but you can reference it in code.
+</api_key>
+<frontend>
+<framework>React with Vite</framework>
+<styling>Tailwind CSS (via CDN)</styling>
+<state_management>React hooks and context</state_management>
+<routing>React Router for navigation</routing>
+<markdown>React Markdown for message rendering</markdown>
+<code_highlighting>Syntax highlighting for code blocks</code_highlighting>
+<port>Only launch on port {frontend_port}</port>
+</frontend>
+<backend>
+<runtime>Node.js with Express</runtime>
+<database>SQLite with better-sqlite3</database>
+<api_integration>Claude API for chat completions</api_integration>
+<streaming>Server-Sent Events for streaming responses</streaming>
+</backend>
+<communication>
+<api>RESTful endpoints</api>
+<streaming>SSE for real-time message streaming</streaming>
+<claude_api>Integration with Claude API using Anthropic SDK</claude_api>
+</communication>
+</technology_stack>
 
   <prerequisites>
     <environment_setup>
@@ -44,21 +44,9 @@
     </environment_setup>
   </prerequisites>
 
-  <core_features>
-    <chat_interface>
-      - Clean, centered chat layout with message bubbles
-      - Streaming message responses with typing indicator
-      - Markdown rendering with proper formatting
-      - Code blocks with syntax highlighting and copy button
-      - LaTeX/math equation rendering
-      - Image upload and display in messages
-      - Multi-turn conversations with context
-      - Message editing and regeneration
-      - Stop generation button during streaming
-      - Input field with auto-resize textarea
-      - Character count and token estimation
-      - Keyboard shortcuts (Enter to send, Shift+Enter for newline)
-    </chat_interface>
+<core_features>
+<chat_interface> - Clean, centered chat layout with message bubbles - Streaming message responses with typing indicator - Markdown rendering with proper formatting - Code blocks with syntax highlighting and copy button - LaTeX/math equation rendering - Image upload and display in messages - Multi-turn conversations with context - Message editing and regeneration - Stop generation button during streaming - Input field with auto-resize textarea - Character count and token estimation - Keyboard shortcuts (Enter to send, Shift+Enter for newline)
+</chat_interface>
 
     <artifacts>
       - Artifact detection and rendering in side panel
@@ -196,16 +184,13 @@
       - Adaptive artifact display
       - Progressive Web App (PWA) support
     </responsive_design>
-  </core_features>
 
-  <database_schema>
-    <tables>
-      <users>
-        - id, email, name, avatar_url
-        - created_at, last_login
-        - preferences (JSON: theme, font_size, etc.)
-        - custom_instructions
-      </users>
+</core_features>
+
+<database_schema>
+<tables>
+<users> - id, email, name, avatar_url - created_at, last_login - preferences (JSON: theme, font_size, etc.) - custom_instructions
+</users>
 
       <projects>
         - id, user_id, name, description, color
@@ -272,15 +257,12 @@
         - is_active
       </api_keys>
     </tables>
-  </database_schema>
 
-  <api_endpoints_summary>
-    <authentication>
-      - POST /api/auth/login
-      - POST /api/auth/logout
-      - GET /api/auth/me
-      - PUT /api/auth/profile
-    </authentication>
+</database_schema>
+
+<api_endpoints_summary>
+<authentication> - POST /api/auth/login - POST /api/auth/logout - GET /api/auth/me - PUT /api/auth/profile
+</authentication>
 
     <conversations>
       - GET /api/conversations
@@ -377,16 +359,12 @@
       - GET /api/claude/models
       - POST /api/claude/images/upload
     </claude_api>
-  </api_endpoints_summary>
 
-  <ui_layout>
-    <main_structure>
-      - Three-column layout: sidebar (conversations), main (chat), panel (artifacts)
-      - Collapsible sidebar with resize handle
-      - Responsive breakpoints: mobile (single column), tablet (two column), desktop (three column)
-      - Persistent header with project/model selector
-      - Bottom input area with send button and options
-    </main_structure>
+</api_endpoints_summary>
+
+<ui_layout>
+<main_structure> - Three-column layout: sidebar (conversations), main (chat), panel (artifacts) - Collapsible sidebar with resize handle - Responsive breakpoints: mobile (single column), tablet (two column), desktop (three column) - Persistent header with project/model selector - Bottom input area with send button and options
+</main_structure>
 
     <sidebar_left>
       - New chat button (prominent)
@@ -430,17 +408,12 @@
       - Command palette overlay
       - Keyboard shortcuts reference
     </modals_overlays>
-  </ui_layout>
 
-  <design_system>
-    <color_palette>
-      - Primary: Orange/amber accent (#CC785C claude-style)
-      - Background: White (light mode), Dark gray (#1A1A1A dark mode)
-      - Surface: Light gray (#F5F5F5 light), Darker gray (#2A2A2A dark)
-      - Text: Near black (#1A1A1A light), Off-white (#E5E5E5 dark)
-      - Borders: Light gray (#E5E5E5 light), Dark gray (#404040 dark)
-      - Code blocks: Monaco editor theme
-    </color_palette>
+</ui_layout>
+
+<design_system>
+<color_palette> - Primary: Orange/amber accent (#CC785C claude-style) - Background: White (light mode), Dark gray (#1A1A1A dark mode) - Surface: Light gray (#F5F5F5 light), Darker gray (#2A2A2A dark) - Text: Near black (#1A1A1A light), Off-white (#E5E5E5 dark) - Borders: Light gray (#E5E5E5 light), Dark gray (#404040 dark) - Code blocks: Monaco editor theme
+</color_palette>
 
     <typography>
       - Sans-serif system font stack (Inter, SF Pro, Roboto, system-ui)
@@ -491,20 +464,12 @@
       - Loading spinner for generation
       - Skeleton loaders for content
     </animations>
-  </design_system>
 
-  <key_interactions>
-    <message_flow>
-      1. User types message in input field
-      2. Optional: Attach images via button
-      3. Click send or press Enter
-      4. Message appears in chat immediately
-      5. Typing indicator shows while waiting
-      6. Response streams in word by word
-      7. Code blocks render with syntax highlighting
-      8. Artifacts detected and rendered in side panel
-      9. Message complete, enable regenerate option
-    </message_flow>
+</design_system>
+
+<key_interactions>
+<message_flow> 1. User types message in input field 2. Optional: Attach images via button 3. Click send or press Enter 4. Message appears in chat immediately 5. Typing indicator shows while waiting 6. Response streams in word by word 7. Code blocks render with syntax highlighting 8. Artifacts detected and rendered in side panel 9. Message complete, enable regenerate option
+</message_flow>
 
     <artifact_flow>
       1. Assistant generates artifact in response
@@ -527,20 +492,16 @@
       7. Search filters conversations in real-time
       8. Click conversation to switch context
     </conversation_management>
-  </key_interactions>
 
-  <implementation_steps>
-    <step number="1">
-      <title>Setup Project Foundation and Database</title>
-      <tasks>
-        - Initialize Express server with SQLite database
-        - Set up Claude API client with streaming support
-        - Create database schema with migrations
-        - Implement authentication endpoints
-        - Set up basic CORS and middleware
-        - Create health check endpoint
-      </tasks>
-    </step>
+</key_interactions>
+
+<implementation_steps>
+<step number="1">
+
+<title>Setup Project Foundation and Database</title>
+<tasks> - Initialize Express server with SQLite database - Set up Claude API client with streaming support - Create database schema with migrations - Implement authentication endpoints - Set up basic CORS and middleware - Create health check endpoint
+</tasks>
+</step>
 
     <step number="2">
       <title>Build Core Chat Interface</title>
@@ -639,17 +600,12 @@
         - Performance optimization and caching
       </tasks>
     </step>
-  </implementation_steps>
 
-  <success_criteria>
-    <functionality>
-      - Streaming chat responses work smoothly
-      - Artifact detection and rendering accurate
-      - Conversation management intuitive and reliable
-      - Project organization clear and useful
-      - Image upload and display working
-      - All CRUD operations functional
-    </functionality>
+</implementation_steps>
+
+<success_criteria>
+<functionality> - Streaming chat responses work smoothly - Artifact detection and rendering accurate - Conversation management intuitive and reliable - Project organization clear and useful - Image upload and display working - All CRUD operations functional
+</functionality>
 
     <user_experience>
       - Interface matches claude.ai design language
@@ -677,5 +633,6 @@
       - Professional, polished appearance
       - Dark mode fully implemented
     </design_polish>
-  </success_criteria>
+
+</success_criteria>
 </project_specification>

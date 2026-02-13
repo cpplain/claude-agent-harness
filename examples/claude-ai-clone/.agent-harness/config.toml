@@ -70,19 +70,14 @@ backoff_multiplier = 2.0
 
 # --- Phases ---
 [[phases]]
-name = "initializer"
-prompt = "file:prompts/initializer.md"
+name = "init"
+prompt = "file:prompts/init.md"
 run_once = true
 condition = "not_exists:.agent-harness/feature_list.json"
 
 [[phases]]
-name = "coding"
-prompt = "file:prompts/coding.md"
-
-# --- Init Files ---
-[[init_files]]
-source = "prompts/app_spec.txt"
-dest = "app_spec.txt"
+name = "build"
+prompt = "file:prompts/build.md"
 
 # --- Post-Run Instructions ---
 # Commands to show after the agent completes

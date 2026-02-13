@@ -128,20 +128,27 @@ def cmd_init(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     harness_dir.mkdir(parents=True, exist_ok=True)
-    (harness_dir / "prompts").mkdir(exist_ok=True)
+    prompts_dir = harness_dir / "prompts"
+    prompts_dir.mkdir(exist_ok=True)
 
-    # Copy template from package
-    template_path = Path(__file__).parent / "templates" / "config.toml"
-    shutil.copy(template_path, config_file)
+    # Copy templates from package
+    templates_dir = Path(__file__).parent / "templates"
+    shutil.copy(templates_dir / "config.toml", config_file)
+    shutil.copy(templates_dir / "spec.md", harness_dir / "spec.md")
+    shutil.copy(templates_dir / "init.md", prompts_dir / "init.md")
+    shutil.copy(templates_dir / "build.md", prompts_dir / "build.md")
 
     print(f"Created {harness_dir}/")
     print(f"  - config.toml (edit this to configure your project)")
-    print(f"  - prompts/ (put prompt files here)")
+    print(f"  - spec.md (describe what you're building)")
+    print(f"  - prompts/init.md (initialization phase prompt)")
+    print(f"  - prompts/build.md (building phase prompt)")
     print()
     print("Next steps:")
-    print(f"  1. Edit {config_file}")
-    print(f"  2. Run: python -m agent_harness verify --project-dir {project_dir}")
-    print(f"  3. Run: python -m agent_harness run --project-dir {project_dir}")
+    print(f"  1. Edit {harness_dir / 'spec.md'} with your project specification")
+    print(f"  2. Edit {config_file} to configure phases and tracking")
+    print(f"  3. Run: python -m agent_harness verify --project-dir {project_dir}")
+    print(f"  4. Run: python -m agent_harness run --project-dir {project_dir}")
 
 
 def main() -> None:

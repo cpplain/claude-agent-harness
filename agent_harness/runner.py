@@ -12,7 +12,6 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -31,7 +30,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
-from agent_harness.config import ConfigError, HarnessConfig, PhaseConfig
+from agent_harness.config import HarnessConfig, PhaseConfig
 from agent_harness.client_factory import create_client
 from agent_harness.tracking import (
     JsonChecklistTracker,
@@ -230,40 +229,6 @@ async def run_agent_session(
         return "error", str(e)
 
 
-def copy_init_files(config: HarnessConfig) -> None:
-    """Copy init_files to harness_dir if they don't already exist.
-
-    Args:
-        config: Harness configuration with init_files and paths
-
-    Raises:
-        ConfigError: If source or dest paths escape harness directory
-    """
-    harness_dir_resolved = config.harness_dir.resolve()
-
-    for init_file in config.init_files:
-        source = (config.harness_dir / init_file.source).resolve()
-        dest = (config.harness_dir / init_file.dest).resolve()
-
-        # Path traversal protection
-        if not source.is_relative_to(harness_dir_resolved):
-            raise ConfigError(
-                f"init_files source escapes harness directory: {init_file.source}"
-            )
-        if not dest.is_relative_to(harness_dir_resolved):
-            raise ConfigError(
-                f"init_files dest escapes harness directory: {init_file.dest}"
-            )
-
-        if not dest.exists():
-            if not source.exists():
-                logger.warning("init file source not found: %s", source)
-                continue
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(source, dest)
-            print(f"Copied {init_file.source} to {dest}")
-
-
 async def run_agent(config: HarnessConfig) -> None:
     """Run the autonomous agent loop.
 
@@ -296,9 +261,6 @@ async def run_agent(config: HarnessConfig) -> None:
 
     # Ensure project directory exists
     config.project_dir.mkdir(parents=True, exist_ok=True)
-
-    # Copy init files on first run
-    copy_init_files(config)
 
     # Show initial progress
     if tracker.is_initialized():

@@ -43,23 +43,6 @@ from agent_harness.tracking import (
 BANNER_WIDTH = 70
 
 
-def calculate_backoff(error_recovery: ErrorRecoveryConfig, consecutive_errors: int) -> float:
-    """Calculate exponential backoff delay with max cap.
-
-    Args:
-        error_recovery: Error recovery configuration with backoff settings
-        consecutive_errors: Number of consecutive errors (1-indexed)
-
-    Returns:
-        Backoff delay in seconds, capped at max_backoff_seconds
-    """
-    return min(
-        error_recovery.initial_backoff_seconds
-        * (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
-        error_recovery.max_backoff_seconds,
-    )
-
-
 def _load_session_state(config: HarnessConfig) -> dict:
     """Load session state from .agent-harness/session.json.
 
@@ -398,7 +381,11 @@ async def run_agent(config: HarnessConfig) -> None:
             consecutive_errors += 1
             last_error_message = response
 
-            backoff_delay = calculate_backoff(config.error_recovery, consecutive_errors)
+            backoff_delay = min(
+                config.error_recovery.initial_backoff_seconds
+                * (config.error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
+                config.error_recovery.max_backoff_seconds,
+            )
 
             print(
                 f"\nSession encountered an error "

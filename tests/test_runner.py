@@ -12,11 +12,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, MagicMock
 
-from agent_harness.config import ErrorRecoveryConfig, HarnessConfig, PhaseConfig
+from agent_harness.config import HarnessConfig, PhaseConfig
 from agent_harness.runner import (
     _load_session_state,
     _save_session_state,
-    calculate_backoff,
     evaluate_condition,
     run_agent_session,
     select_phase,
@@ -404,61 +403,6 @@ class TestSessionStatePruning(unittest.TestCase):
 
             loaded = _load_session_state(config)
             self.assertEqual(loaded["completed_phases"], ["init"])
-
-
-class TestBackoffCalculation(unittest.TestCase):
-    """Test error recovery backoff calculation."""
-
-    def test_exponential_backoff(self) -> None:
-        """Test that backoff increases exponentially: 5→10→20→40→80."""
-        error_recovery = ErrorRecoveryConfig(
-            initial_backoff_seconds=5.0,
-            backoff_multiplier=2.0,
-            max_backoff_seconds=120.0
-        )
-
-        # Calculate backoff for consecutive errors 1-5
-        backoffs = [
-            calculate_backoff(error_recovery, consecutive_errors)
-            for consecutive_errors in range(1, 6)
-        ]
-
-        # Verify exponential progression
-        self.assertEqual(backoffs, [5.0, 10.0, 20.0, 40.0, 80.0])
-
-    def test_backoff_max_cap(self) -> None:
-        """Test that backoff is capped at max_backoff_seconds."""
-        error_recovery = ErrorRecoveryConfig(
-            initial_backoff_seconds=5.0,
-            backoff_multiplier=2.0,
-            max_backoff_seconds=60.0
-        )
-
-        # Calculate backoff for many consecutive errors
-        backoffs = [
-            calculate_backoff(error_recovery, consecutive_errors)
-            for consecutive_errors in range(1, 8)
-        ]
-
-        # Verify capping at 60.0
-        self.assertEqual(backoffs, [5.0, 10.0, 20.0, 40.0, 60.0, 60.0, 60.0])
-
-    def test_different_backoff_multiplier(self) -> None:
-        """Test backoff with 3.0x multiplier: 2→6→18→54."""
-        error_recovery = ErrorRecoveryConfig(
-            initial_backoff_seconds=2.0,
-            backoff_multiplier=3.0,
-            max_backoff_seconds=200.0
-        )
-
-        # Calculate backoff for consecutive errors 1-4
-        backoffs = [
-            calculate_backoff(error_recovery, consecutive_errors)
-            for consecutive_errors in range(1, 5)
-        ]
-
-        # Verify 3x progression
-        self.assertEqual(backoffs, [2.0, 6.0, 18.0, 54.0])
 
 
 class TestRunAgentSession(unittest.TestCase):

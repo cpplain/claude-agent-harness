@@ -8,6 +8,7 @@ system_prompt = "You are an expert full-stack developer building a production-qu
 # --- Session ---
 max_turns = 1000
 auto_continue_delay = 3
+# max_iterations = 10  # Optional: limit total sessions (default: unlimited)
 
 # --- Tools ---
 [tools]
@@ -32,15 +33,26 @@ allow_local_binding = true
 
 [security.permissions]
 allow = [
-    "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(grep *)",
-    "Bash(cp *)", "Bash(mkdir *)", "Bash(chmod *)",
-    "Bash(pwd)", "Bash(ps *)", "Bash(lsof *)", "Bash(sleep *)", "Bash(pkill *)",
-    "Bash(npm *)", "Bash(node *)", "Bash(git *)",
-    "Bash(./init.sh)",
+  "Bash(ls *)",
+  "Bash(cat *)",
+  "Bash(head *)",
+  "Bash(tail *)",
+  "Bash(wc *)",
+  "Bash(grep *)",
+  "Bash(cp *)",
+  "Bash(mkdir *)",
+  "Bash(chmod *)",
+  "Bash(pwd)",
+  "Bash(ps *)",
+  "Bash(lsof *)",
+  "Bash(sleep *)",
+  "Bash(pkill *)",
+  "Bash(npm *)",
+  "Bash(node *)",
+  "Bash(git *)",
+  "Bash(./init.sh)",
 ]
-deny = [
-    "Bash(curl *)", "Bash(wget *)",
-]
+deny = ["Bash(curl *)", "Bash(wget *)"]
 
 # --- Progress Tracking ---
 [tracking]
@@ -50,11 +62,11 @@ passing_field = "passes"
 
 # --- Error Recovery ---
 # Configures exponential backoff and circuit breaker for error handling
-# [error_recovery]
-# max_consecutive_errors = 5
-# initial_backoff_seconds = 5.0
-# max_backoff_seconds = 120.0
-# backoff_multiplier = 2.0
+[error_recovery]
+max_consecutive_errors = 5
+initial_backoff_seconds = 5.0
+max_backoff_seconds = 120.0
+backoff_multiplier = 2.0
 
 # --- Phases ---
 [[phases]]
@@ -74,7 +86,4 @@ dest = "app_spec.txt"
 
 # --- Post-Run Instructions ---
 # Commands to show after the agent completes
-post_run_instructions = [
-    "npm install",
-    "npm run dev",
-]
+post_run_instructions = ["npm install", "npm run dev"]

@@ -20,13 +20,13 @@ mkdir -p ./my-claude-clone
 cp -r examples/claude-ai-clone/.agent-harness ./my-claude-clone/
 
 # Verify setup
-uv run python -m agent_harness verify --project-dir ./my-claude-clone
+agent-harness verify --project-dir ./my-claude-clone
 
 # Run the agent
-uv run python -m agent_harness run --project-dir ./my-claude-clone
+agent-harness run --project-dir ./my-claude-clone
 
 # Run with iteration limit
-uv run python -m agent_harness run --project-dir ./my-claude-clone --max-iterations 5
+agent-harness run --project-dir ./my-claude-clone --max-iterations 5
 ```
 
 ## How It Works

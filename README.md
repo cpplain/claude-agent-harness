@@ -15,27 +15,20 @@ Agent Harness provides:
 - **Session persistence** — auto-continue across sessions with state tracking
 - **Setup verification** — check auth, tools, config before running
 
+## Prerequisites
+
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) package manager
+
 ## Getting Started
 
-### 1. Clone and install
+### 1. Install
 
 ```bash
 git clone <repo-url>
 cd claude-agent-harness
-uv sync
+uv tool install .
 ```
-
-<details>
-<summary>Alternative using pip</summary>
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
-```
-
-If using pip, replace `uv run` with `python` in all commands below.
-
-</details>
 
 ### 2. Set up authentication
 
@@ -58,7 +51,7 @@ ANTHROPIC_API_KEY="op://Vault/Item/api_key"
 Then wrap any command with `op run`:
 
 ```bash
-op run --env-file "./.env" -- uv run python -m agent_harness run --project-dir ./my-project
+op run --env-file "./.env" -- agent-harness run --project-dir ./my-project
 ```
 
 </details>
@@ -67,36 +60,29 @@ op run --env-file "./.env" -- uv run python -m agent_harness run --project-dir .
 
 ```bash
 # Scaffold a new project configuration
-uv run python -m agent_harness init --project-dir ./my-project
+agent-harness init --project-dir ./my-project
 
 # Edit the configuration
 #    -> ./my-project/.agent-harness/config.toml
 
 # Verify setup
-uv run python -m agent_harness verify --project-dir ./my-project
+agent-harness verify --project-dir ./my-project
 
 # Run the agent
-uv run python -m agent_harness run --project-dir ./my-project
+agent-harness run --project-dir ./my-project
 ```
 
 ## CLI Reference
 
 ```bash
-# Run the agent
-uv run python -m agent_harness run --project-dir <path> [options]
+agent-harness init --project-dir <path>     # Scaffold new config
+agent-harness verify --project-dir <path>   # Check setup
+agent-harness run --project-dir <path>      # Run the agent
 
-# Verify setup (auth, dependencies, config)
-uv run python -m agent_harness verify [--project-dir <path>]
-
-# Scaffold new project configuration
-uv run python -m agent_harness init --project-dir <path>
-
-# Global flags (all commands)
+# Options
 --project-dir PATH      # Agent's working directory (default: .)
-
-# Run command options
---max-iterations N      # Override max iterations (default: from config)
---model MODEL           # Override model (default: from config)
+--max-iterations N      # Override max iterations (run only)
+--model MODEL           # Override model (run only)
 ```
 
 ## How It Works
@@ -219,7 +205,7 @@ For a complete, annotated configuration reference with detailed comments on all 
 The `init` command creates a new config using the template:
 
 ```bash
-uv run python -m agent_harness init --project-dir ./my-project
+agent-harness init --project-dir ./my-project
 ```
 
 ### Config Loading Precedence
@@ -283,7 +269,7 @@ See [`examples/claude-ai-clone/`](examples/claude-ai-clone/) for a complete exam
 # Run the Claude.ai clone example
 mkdir -p ./my-clone-output
 cp -r examples/claude-ai-clone/.agent-harness ./my-clone-output/
-uv run python -m agent_harness run --project-dir ./my-clone-output
+agent-harness run --project-dir ./my-clone-output
 ```
 
 ### Simple Calculator (Python)
@@ -302,7 +288,7 @@ See [`examples/simple-calculator/`](examples/simple-calculator/) for a minimal e
 The harness expects a `.agent-harness/config.toml` file in your project directory. If you see this error:
 
 1. Check that you're running from the correct directory
-2. Use `uv run python -m agent_harness init --project-dir ./my-project` to scaffold a new configuration
+2. Use `agent-harness init --project-dir ./my-project` to scaffold a new configuration
 
 ### "Prompt file not found"
 
@@ -331,9 +317,12 @@ If a session truly hangs:
 2. Look for permission prompts or security blocks in the output
 3. Verify your progress file format matches the configuration (e.g., `feature_list.json` with `"passes": false` fields)
 
-## Running Tests
+## Development
 
 ```bash
+# Install dependencies
+uv sync
+
 # Run all tests
 uv run python -m unittest discover tests -v
 

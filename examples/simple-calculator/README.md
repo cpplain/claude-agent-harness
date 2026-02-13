@@ -22,10 +22,10 @@ mkdir -p ./my-calculator
 cp -r examples/simple-calculator/.agent-harness ./my-calculator/
 
 # Verify setup
-uv run python -m agent_harness verify --project-dir ./my-calculator
+agent-harness verify --project-dir ./my-calculator
 
 # Run the agent (limited to 10 iterations)
-uv run python -m agent_harness run --project-dir ./my-calculator
+agent-harness run --project-dir ./my-calculator
 ```
 
 ## How It Works

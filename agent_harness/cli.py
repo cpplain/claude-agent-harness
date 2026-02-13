@@ -20,18 +20,12 @@ from agent_harness.verify import run_verify
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
-    """Add --project-dir and --harness-dir to a parser."""
+    """Add --project-dir to a parser."""
     parser.add_argument(
         "--project-dir",
         type=Path,
         default=Path("."),
         help="Agent's working directory (default: current directory)",
-    )
-    parser.add_argument(
-        "--harness-dir",
-        type=Path,
-        default=None,
-        help="Path to .agent-harness/ directory (default: project-dir/.agent-harness/)",
     )
 
 
@@ -74,10 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_run(args: argparse.Namespace) -> None:
     """Execute the run subcommand."""
     project_dir = args.project_dir.resolve()
-    harness_dir = args.harness_dir.resolve() if args.harness_dir else None
 
     try:
-        config = load_config(project_dir, harness_dir, {
+        config = load_config(project_dir, {
             "model": args.model,
             "max_iterations": args.max_iterations,
         })
@@ -98,9 +91,8 @@ def cmd_run(args: argparse.Namespace) -> None:
 def cmd_verify(args: argparse.Namespace) -> None:
     """Execute the verify subcommand."""
     project_dir = args.project_dir.resolve()
-    harness_dir = args.harness_dir.resolve() if args.harness_dir else None
 
-    results = run_verify(project_dir, harness_dir)
+    results = run_verify(project_dir)
 
     print("\nVerification Results:")
     print("-" * 50)
@@ -127,7 +119,7 @@ def cmd_verify(args: argparse.Namespace) -> None:
 def cmd_init(args: argparse.Namespace) -> None:
     """Execute the init subcommand."""
     project_dir = args.project_dir.resolve()
-    harness_dir = args.harness_dir.resolve() if args.harness_dir else project_dir / CONFIG_DIR_NAME
+    harness_dir = project_dir / CONFIG_DIR_NAME
 
     config_file = harness_dir / "config.toml"
     if config_file.exists():

@@ -158,10 +158,10 @@ def check_config_exists(harness_dir: Path) -> CheckResult:
     return CheckResult("Config file", "FAIL", f"Not found: {config_file}")
 
 
-def check_config_valid(project_dir: Path, harness_dir: Optional[Path] = None) -> tuple[CheckResult, Optional[HarnessConfig]]:
+def check_config_valid(project_dir: Path) -> tuple[CheckResult, Optional[HarnessConfig]]:
     """Check that config loads and validates."""
     try:
-        config = load_config(project_dir, harness_dir)
+        config = load_config(project_dir)
         return CheckResult("Config validation", "PASS"), config
     except ConfigError as e:
         return CheckResult("Config validation", "FAIL", str(e)), None
@@ -246,20 +246,18 @@ def check_project_dir(project_dir: Path) -> CheckResult:
     )
 
 
-def run_verify(project_dir: Path, harness_dir: Optional[Path] = None) -> list[CheckResult]:
+def run_verify(project_dir: Path) -> list[CheckResult]:
     """Run all verification checks.
 
     All checks run regardless of failures.
 
     Args:
         project_dir: Agent's working directory
-        harness_dir: Path to .agent-harness/ directory (defaults to project_dir/.agent-harness/)
 
     Returns:
         List of CheckResults
     """
-    if harness_dir is None:
-        harness_dir = project_dir / CONFIG_DIR_NAME
+    harness_dir = project_dir / CONFIG_DIR_NAME
 
     results: list[CheckResult] = []
 
@@ -279,7 +277,7 @@ def run_verify(project_dir: Path, harness_dir: Optional[Path] = None) -> list[Ch
     results.append(check_config_exists(harness_dir))
 
     # Config-dependent checks
-    config_result, config = check_config_valid(project_dir, harness_dir)
+    config_result, config = check_config_valid(project_dir)
     results.append(config_result)
 
     if config is not None:

@@ -161,13 +161,6 @@ run_once = true
             config = load_config(project_dir)
             self.assertEqual(config.harness_dir, project_dir / ".agent-harness")
 
-    def test_harness_dir_override(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            project_dir = self._write_config(tmpdir, "")
-            harness_dir = project_dir / ".agent-harness"
-            config = load_config(project_dir, harness_dir=harness_dir)
-            self.assertEqual(config.harness_dir, harness_dir)
-
     def test_tools_with_mcp_servers(self) -> None:
         with TemporaryDirectory() as tmpdir:
             toml_content = """

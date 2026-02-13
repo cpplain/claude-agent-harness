@@ -293,14 +293,12 @@ def _validate_config(config: HarnessConfig) -> list[str]:
 
 def load_config(
     project_dir: Path,
-    harness_dir: Optional[Path] = None,
     cli_overrides: Optional[dict[str, Any]] = None,
 ) -> HarnessConfig:
     """Load configuration from .agent-harness/config.toml.
 
     Args:
         project_dir: Agent's working directory
-        harness_dir: Path to .agent-harness/ directory (defaults to project_dir/.agent-harness/)
         cli_overrides: CLI flag overrides (model, max_iterations)
 
     Returns:
@@ -309,8 +307,7 @@ def load_config(
     Raises:
         ConfigError: If config file is missing, invalid, or fails validation
     """
-    if harness_dir is None:
-        harness_dir = project_dir / CONFIG_DIR_NAME
+    harness_dir = project_dir / CONFIG_DIR_NAME
 
     config_file = harness_dir / "config.toml"
 

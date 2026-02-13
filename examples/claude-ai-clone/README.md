@@ -15,20 +15,18 @@ An autonomous agent that builds a fully functional clone of claude.ai using:
 From the repository root:
 
 ```bash
-# Verify setup
-python -m agent_harness verify \
-    --harness-dir examples/claude-ai-clone/.agent-harness
+# Copy the harness config to your project directory
+mkdir -p ./my-claude-clone
+cp -r examples/claude-ai-clone/.agent-harness ./my-claude-clone/
 
-# Run with harness config from example, agent works in ./my-claude-clone
-python -m agent_harness run \
-    --project-dir ./my-claude-clone \
-    --harness-dir examples/claude-ai-clone/.agent-harness
+# Verify setup
+uv run python -m agent_harness verify --project-dir ./my-claude-clone
+
+# Run the agent
+uv run python -m agent_harness run --project-dir ./my-claude-clone
 
 # Run with iteration limit
-python -m agent_harness run \
-    --project-dir ./my-claude-clone \
-    --harness-dir examples/claude-ai-clone/.agent-harness \
-    --max-iterations 5
+uv run python -m agent_harness run --project-dir ./my-claude-clone --max-iterations 5
 ```
 
 ## How It Works

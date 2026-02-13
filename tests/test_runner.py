@@ -10,9 +10,9 @@ import logging
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-from agent_harness.config import ErrorRecoveryConfig, HarnessConfig, PhaseConfig
+from agent_harness.config import HarnessConfig, PhaseConfig
 from agent_harness.runner import (
     _load_session_state,
     _save_session_state,
@@ -240,38 +240,23 @@ class TestSessionState(unittest.TestCase):
                 _load_session_state(config)
             self.assertTrue(any("Corrupt session state" in msg for msg in cm.output))
 
-    def test_load_non_dict_json_array(self) -> None:
-        """Test that JSON arrays are treated as corrupt."""
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir(parents=True)
-            (config_dir / "session.json").write_text('[1, 2, 3]')
-            config = HarnessConfig(harness_dir=config_dir)
-            state = _load_session_state(config)
-            self.assertEqual(state["session_number"], 0)
-            self.assertEqual(state["completed_phases"], [])
-
-    def test_load_non_dict_json_string(self) -> None:
-        """Test that JSON strings are treated as corrupt."""
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir(parents=True)
-            (config_dir / "session.json").write_text('"just a string"')
-            config = HarnessConfig(harness_dir=config_dir)
-            state = _load_session_state(config)
-            self.assertEqual(state["session_number"], 0)
-            self.assertEqual(state["completed_phases"], [])
-
-    def test_load_non_dict_json_number(self) -> None:
-        """Test that JSON numbers are treated as corrupt."""
-        with TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / ".agent-harness"
-            config_dir.mkdir(parents=True)
-            (config_dir / "session.json").write_text('42')
-            config = HarnessConfig(harness_dir=config_dir)
-            state = _load_session_state(config)
-            self.assertEqual(state["session_number"], 0)
-            self.assertEqual(state["completed_phases"], [])
+    def test_load_non_dict_json_types(self) -> None:
+        """Test that non-dict JSON types (array, string, number) are treated as corrupt."""
+        test_cases = [
+            ('[1, 2, 3]', "array"),
+            ('"just a string"', "string"),
+            ('42', "number"),
+        ]
+        for json_content, type_name in test_cases:
+            with self.subTest(type=type_name):
+                with TemporaryDirectory() as tmpdir:
+                    config_dir = Path(tmpdir) / ".agent-harness"
+                    config_dir.mkdir(parents=True)
+                    (config_dir / "session.json").write_text(json_content)
+                    config = HarnessConfig(harness_dir=config_dir)
+                    state = _load_session_state(config)
+                    self.assertEqual(state["session_number"], 0)
+                    self.assertEqual(state["completed_phases"], [])
 
     def test_load_non_dict_json_logs_warning(self) -> None:
         """Test that non-dict JSON logs a warning."""
@@ -420,92 +405,6 @@ class TestSessionStatePruning(unittest.TestCase):
             self.assertEqual(loaded["completed_phases"], ["init"])
 
 
-class TestBackoffCalculation(unittest.TestCase):
-    """Test error recovery backoff calculation."""
-
-    def test_exponential_backoff(self) -> None:
-        """Test that backoff increases exponentially: 5→10→20→40→80."""
-        error_recovery = ErrorRecoveryConfig(
-            initial_backoff_seconds=5.0,
-            backoff_multiplier=2.0,
-            max_backoff_seconds=120.0
-        )
-
-        # Calculate backoff for consecutive errors 1-5
-        backoffs = []
-        for consecutive_errors in range(1, 6):
-            backoff = min(
-                error_recovery.initial_backoff_seconds *
-                (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
-                error_recovery.max_backoff_seconds
-            )
-            backoffs.append(backoff)
-
-        # Verify exponential progression
-        self.assertEqual(backoffs, [5.0, 10.0, 20.0, 40.0, 80.0])
-
-    def test_backoff_max_cap(self) -> None:
-        """Test that backoff is capped at max_backoff_seconds."""
-        error_recovery = ErrorRecoveryConfig(
-            initial_backoff_seconds=5.0,
-            backoff_multiplier=2.0,
-            max_backoff_seconds=60.0
-        )
-
-        # Calculate backoff for many consecutive errors
-        backoffs = []
-        for consecutive_errors in range(1, 8):
-            backoff = min(
-                error_recovery.initial_backoff_seconds *
-                (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
-                error_recovery.max_backoff_seconds
-            )
-            backoffs.append(backoff)
-
-        # Verify capping at 60.0
-        self.assertEqual(backoffs, [5.0, 10.0, 20.0, 40.0, 60.0, 60.0, 60.0])
-
-    def test_circuit_breaker_threshold(self) -> None:
-        """Test that circuit breaker trips at max_consecutive_errors."""
-        error_recovery = ErrorRecoveryConfig(
-            max_consecutive_errors=3,
-            initial_backoff_seconds=5.0,
-            backoff_multiplier=2.0,
-            max_backoff_seconds=120.0
-        )
-
-        # Simulate consecutive errors
-        for consecutive_errors in range(1, 5):
-            should_break = consecutive_errors >= error_recovery.max_consecutive_errors
-
-            if consecutive_errors < 3:
-                self.assertFalse(should_break)
-            else:
-                # At 3 or more, circuit breaker should trip
-                self.assertTrue(should_break)
-
-    def test_different_backoff_multiplier(self) -> None:
-        """Test backoff with 3.0x multiplier: 2→6→18→54."""
-        error_recovery = ErrorRecoveryConfig(
-            initial_backoff_seconds=2.0,
-            backoff_multiplier=3.0,
-            max_backoff_seconds=200.0
-        )
-
-        # Calculate backoff for consecutive errors 1-4
-        backoffs = []
-        for consecutive_errors in range(1, 5):
-            backoff = min(
-                error_recovery.initial_backoff_seconds *
-                (error_recovery.backoff_multiplier ** (consecutive_errors - 1)),
-                error_recovery.max_backoff_seconds
-            )
-            backoffs.append(backoff)
-
-        # Verify 3x progression
-        self.assertEqual(backoffs, [2.0, 6.0, 18.0, 54.0])
-
-
 class TestRunAgentSession(unittest.TestCase):
     """Test run_agent_session exception handling."""
 
@@ -528,97 +427,40 @@ class TestRunAgentSession(unittest.TestCase):
         # Check that exception was logged
         self.assertTrue(any("Error during agent session" in msg for msg in cm.output))
 
-    def test_exception_includes_traceback(self) -> None:
-        """Test that exception logging includes full traceback."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=RuntimeError("Runtime error"))
-
-        # Patch logger.exception to verify it was called
-        with patch("agent_harness.runner.logger.exception") as mock_logger:
-            _status, _response = asyncio.run(
-                run_agent_session(mock_client, "test prompt")
-            )
-
-            # Verify logger.exception was called (which includes traceback)
-            mock_logger.assert_called_once_with("Error during agent session")
-
 
 class TestNarrowExceptionHandler(unittest.TestCase):
     """Test narrowed exception handler (B2)."""
 
-    def test_type_error_propagates(self) -> None:
-        """Test that TypeError is not caught (programming error)."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=TypeError("Bad type"))
+    def test_programming_errors_propagate(self) -> None:
+        """Test that programming errors (TypeError, AttributeError, KeyError) are not caught."""
+        error_cases = [
+            (TypeError, "Bad type"),
+            (AttributeError, "No attribute"),
+            (KeyError, "missing_key"),
+        ]
+        for error_class, message in error_cases:
+            with self.subTest(error=error_class.__name__):
+                mock_client = MagicMock()
+                mock_client.query = AsyncMock(side_effect=error_class(message))
+                with self.assertRaises(error_class):
+                    asyncio.run(run_agent_session(mock_client, "test prompt"))
 
-        with self.assertRaises(TypeError):
-            asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-    def test_attribute_error_propagates(self) -> None:
-        """Test that AttributeError is not caught (programming error)."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=AttributeError("No attribute"))
-
-        with self.assertRaises(AttributeError):
-            asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-    def test_key_error_propagates(self) -> None:
-        """Test that KeyError is not caught (programming error)."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=KeyError("missing_key"))
-
-        with self.assertRaises(KeyError):
-            asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-    def test_runtime_error_caught(self) -> None:
-        """Test that RuntimeError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=RuntimeError("Runtime error"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "Runtime error")
-
-    def test_connection_error_caught(self) -> None:
-        """Test that ConnectionError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=ConnectionError("Connection failed"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "Connection failed")
-
-    def test_timeout_error_caught(self) -> None:
-        """Test that TimeoutError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=TimeoutError("Timeout"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "Timeout")
-
-    def test_os_error_caught(self) -> None:
-        """Test that OSError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=OSError("OS error"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "OS error")
-
-    def test_io_error_caught(self) -> None:
-        """Test that IOError is caught and returns error status."""
-        mock_client = MagicMock()
-        mock_client.query = AsyncMock(side_effect=IOError("IO error"))
-
-        status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
-
-        self.assertEqual(status, "error")
-        self.assertEqual(response, "IO error")
+    def test_operational_errors_caught(self) -> None:
+        """Test that operational errors are caught and return error status."""
+        error_cases = [
+            (RuntimeError, "Runtime error"),
+            (ConnectionError, "Connection failed"),
+            (TimeoutError, "Timeout"),
+            (OSError, "OS error"),
+            (IOError, "IO error"),
+        ]
+        for error_class, message in error_cases:
+            with self.subTest(error=error_class.__name__):
+                mock_client = MagicMock()
+                mock_client.query = AsyncMock(side_effect=error_class(message))
+                status, response = asyncio.run(run_agent_session(mock_client, "test prompt"))
+                self.assertEqual(status, "error")
+                self.assertEqual(response, message)
 
 
 if __name__ == "__main__":

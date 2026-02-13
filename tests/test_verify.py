@@ -67,19 +67,15 @@ class TestCheckClaudeCli(unittest.TestCase):
     @patch("agent_harness.verify.shutil.which", return_value=None)
     def test_bundled_cli_passes(self, mock_which: MagicMock) -> None:
         """Test that bundled CLI in SDK is detected when not on PATH."""
-        with patch("agent_harness.verify.Path") as mock_path_class:
-            # Create a mock module with __file__ attribute
+        with TemporaryDirectory() as tmpdir:
+            # Create mock SDK structure
+            sdk_dir = Path(tmpdir) / "claude_agent_sdk"
+            bundled_dir = sdk_dir / "_bundled"
+            bundled_dir.mkdir(parents=True)
+            (bundled_dir / "claude").touch()
+
             mock_sdk = MagicMock()
-            mock_sdk.__file__ = "/path/to/claude_agent_sdk/__init__.py"
-
-            # Mock the bundled path chain: Path(sdk.__file__).parent / "_bundled" / "claude"
-            mock_bundled_path = MagicMock()
-            mock_bundled_path.exists.return_value = True
-
-            # Setup Path() call chain
-            mock_path_instance = MagicMock()
-            mock_path_instance.parent.__truediv__.return_value.__truediv__.return_value = mock_bundled_path
-            mock_path_class.return_value = mock_path_instance
+            mock_sdk.__file__ = str(sdk_dir / "__init__.py")
 
             with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
                 result = check_claude_cli()
@@ -261,8 +257,16 @@ class TestRunVerify(unittest.TestCase):
             config_dir.mkdir()
             (config_dir / "config.toml").write_text("")
             results = run_verify(Path(tmpdir))
-            # Should have at least the basic checks
-            self.assertGreater(len(results), 4)
+
+            # Verify specific required checks are present
+            check_names = [result.name for result in results]
+            required_checks = ["Config file", "Config validation", "Python version"]
+            for check in required_checks:
+                self.assertIn(check, check_names)
+
+            # Verify at least the "Config file" check passes
+            config_file_result = next(r for r in results if r.name == "Config file")
+            self.assertEqual(config_file_result.status, "PASS")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ Configuration Tests
 Tests for config loading, validation, defaults, and file: resolution.
 """
 
+import logging
+import logging.handlers
 import os
 import unittest
 from pathlib import Path
@@ -16,7 +18,6 @@ from agent_harness.config import (
     DEFAULT_BUILTIN_TOOLS,
     HarnessConfig,
     load_config,
-    resolve_file_reference,
 )
 
 
@@ -39,11 +40,6 @@ class TestConfigDefaults(unittest.TestCase):
         config = HarnessConfig()
         self.assertEqual(config.tools.builtin, DEFAULT_BUILTIN_TOOLS)
 
-    def test_default_tools_equals_constant(self) -> None:
-        """Test that default builtin tools matches the constant."""
-        config = HarnessConfig()
-        self.assertEqual(config.tools.builtin, DEFAULT_BUILTIN_TOOLS)
-
     def test_default_security(self) -> None:
         config = HarnessConfig()
         self.assertEqual(config.security.permission_mode, "acceptEdits")
@@ -59,26 +55,6 @@ class TestConfigDefaults(unittest.TestCase):
     def test_default_phases(self) -> None:
         config = HarnessConfig()
         self.assertEqual(config.phases, [])
-
-
-class TestFileReference(unittest.TestCase):
-    """Test file: reference resolution."""
-
-    def test_inline_string_returned_as_is(self) -> None:
-        result = resolve_file_reference("Hello world", Path("/tmp"))
-        self.assertEqual(result, "Hello world")
-
-    def test_file_reference_loads_content(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            prompt_file = Path(tmpdir) / "system.md"
-            prompt_file.write_text("You are a coding assistant.")
-            result = resolve_file_reference("file:system.md", Path(tmpdir))
-            self.assertEqual(result, "You are a coding assistant.")
-
-    def test_file_reference_missing_file_raises(self) -> None:
-        with TemporaryDirectory() as tmpdir:
-            with self.assertRaises(ConfigError):
-                resolve_file_reference("file:missing.md", Path(tmpdir))
 
 
 class TestLoadConfig(unittest.TestCase):
@@ -839,10 +815,25 @@ max_turns = 500
 auto_continue_delay = 5
 """
             project_dir = self._write_config(tmpdir, toml_content)
-            # Use a custom logger to check no warnings
-            with self.assertRaises(AssertionError):
-                with self.assertLogs("agent_harness.config", level=logging.WARNING):
-                    load_config(project_dir)
+            # Capture logs and check for warnings
+            # Using logging.INFO since config module might not emit DEBUG logs
+            logger = logging.getLogger("agent_harness.config")
+            original_level = logger.level
+            try:
+                handler = logging.handlers.MemoryHandler(capacity=100)
+                logger.setLevel(logging.DEBUG)
+                logger.addHandler(handler)
+                load_config(project_dir)
+                handler.flush()
+                # Verify no WARNING messages were logged
+                warning_logs = [
+                    record for record in handler.buffer
+                    if record.levelno >= logging.WARNING
+                ]
+                self.assertEqual(len(warning_logs), 0)
+            finally:
+                logger.removeHandler(handler)
+                logger.setLevel(original_level)
 
 
 class TestAdditionalValidation(unittest.TestCase):

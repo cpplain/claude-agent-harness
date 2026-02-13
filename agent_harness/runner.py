@@ -31,7 +31,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
-from agent_harness.config import ConfigError, ErrorRecoveryConfig, HarnessConfig, PhaseConfig
+from agent_harness.config import ConfigError, HarnessConfig, PhaseConfig
 from agent_harness.client_factory import create_client
 from agent_harness.tracking import (
     JsonChecklistTracker,

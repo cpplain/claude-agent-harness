@@ -443,25 +443,6 @@ class TestBackoffCalculation(unittest.TestCase):
         # Verify capping at 60.0
         self.assertEqual(backoffs, [5.0, 10.0, 20.0, 40.0, 60.0, 60.0, 60.0])
 
-    def test_circuit_breaker_threshold(self) -> None:
-        """Test that circuit breaker trips at max_consecutive_errors."""
-        error_recovery = ErrorRecoveryConfig(
-            max_consecutive_errors=3,
-            initial_backoff_seconds=5.0,
-            backoff_multiplier=2.0,
-            max_backoff_seconds=120.0
-        )
-
-        # Simulate consecutive errors
-        for consecutive_errors in range(1, 5):
-            should_break = consecutive_errors >= error_recovery.max_consecutive_errors
-
-            if consecutive_errors < 3:
-                self.assertFalse(should_break)
-            else:
-                # At 3 or more, circuit breaker should trip
-                self.assertTrue(should_break)
-
     def test_different_backoff_multiplier(self) -> None:
         """Test backoff with 3.0x multiplier: 2→6→18→54."""
         error_recovery = ErrorRecoveryConfig(

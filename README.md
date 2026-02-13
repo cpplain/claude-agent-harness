@@ -2,22 +2,7 @@
 
 A generic, configurable harness for long-running autonomous coding agents. Built on the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk), it implements [Anthropic's guide for effective agent harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), featuring phase-driven execution, configurable MCP tools, and SDK-native sandbox isolation.
 
-This project originated from the [autonomous-coding example](https://github.com/anthropics/claude-quickstarts/tree/main/autonomous-coding) in the claude-quickstarts repository and extends it into a fully configurable, project-agnostic harness.
-
-## What This Is
-
-This is a **project-agnostic harness** that can drive any kind of autonomous coding task:
-
-- **Web applications** (Next.js, React, Vue, etc.)
-- **Backend services** (Node, Python, Ruby, Go, etc.)
-- **Test refactoring** (RSpec, Jest, Pytest, etc.)
-- **Data pipelines** and ETL workflows
-- **CLI tools** and automation scripts
-- **Any other coding task** requiring multiple iterations
-
-The harness is **completely generic** — all project-specific configuration (tech stack, tools, prompts) is declared in a `.agent-harness/config.toml` file. No hardcoded assumptions about your stack.
-
-## Overview
+## Features
 
 Agent Harness provides:
 
@@ -30,28 +15,6 @@ Agent Harness provides:
 - **Session persistence** — auto-continue across sessions with state tracking
 - **Setup verification** — check auth, tools, config before running
 
-## Design Philosophy
-
-This project follows Anthropic's recommendations for building agents. Before designing or implementing any feature, read and understand their guidance—they have already solved most agent problems and documented both WHAT to do and WHY.
-
-### Required Reading
-
-**SDK & Implementation**
-
-- [Agent SDK Overview](https://platform.claude.com/docs/en/agent-sdk/overview) — Built-in capabilities
-- [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing) — Security model
-- [Effective Harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — Session patterns
-
-**Architecture & Design**
-
-- [Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — Core principles
-- [Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — Prompt design
-- [Writing Tools for Agents](https://www.anthropic.com/engineering/writing-tools-for-agents) — Tool design
-
-### Example: Security
-
-This project originally had ~500 lines of custom shell command parsing for security. The [sandboxing article](https://www.anthropic.com/engineering/claude-code-sandboxing) explains why Anthropic chose OS-level isolation instead—reading it first would have avoided this unnecessary complexity.
-
 ## Getting Started
 
 ### 1. Clone and install
@@ -63,7 +26,7 @@ uv sync
 ```
 
 <details>
-<summary>Alternative: using pip</summary>
+<summary>Alternative using pip</summary>
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -120,13 +83,13 @@ uv run python -m agent_harness run --project-dir ./my-project
 
 ```bash
 # Run the agent
-python -m agent_harness run --project-dir <path> [options]
+uv run python -m agent_harness run --project-dir <path> [options]
 
 # Verify setup (auth, dependencies, config)
-python -m agent_harness verify [--project-dir <path>]
+uv run python -m agent_harness verify [--project-dir <path>]
 
 # Scaffold new project configuration
-python -m agent_harness init --project-dir <path>
+uv run python -m agent_harness init --project-dir <path>
 
 # Global flags (all commands)
 --project-dir PATH      # Agent's working directory (default: .)
@@ -139,34 +102,23 @@ python -m agent_harness init --project-dir <path>
 
 ## How It Works
 
-### Phase-Driven Execution
+The harness executes agents in configurable **phases** with conditions and run-once semantics. Each phase gets a fresh Claude SDK session (no context carryover) with a configured prompt.
 
-The harness executes agents in configurable phases with conditions and run-once semantics:
+**Phase execution:**
 
-1. **Initializer Phase** (run_once: true):
-   - Reads the specification
-   - Creates a feature list with test cases
-   - Sets up project structure
-   - Initializes git repository
+- Phases run sequentially based on conditions (`exists:`, `not_exists:` path checks)
+- `run_once: true` phases skip after first successful completion
+- State persists in `.agent-harness/session.json`
 
-2. **Coding Phase** (repeating):
-   - Picks up where previous session left off
-   - Implements features one by one
-   - Marks features as complete in progress file
-   - Creates git commits for changes
+**Session management:**
 
-### Session Management
+- Fresh context per session prevents context pollution
+- Progress preserved via tracking file (e.g., `feature_list.json`), session state, and git commits
+- Auto-continue after configured delay (default 3s)
+- Completion detection: Harness stops when `tracker.is_complete()` returns `true` (only `json_checklist` supports this; `notes_file` and `none` require manual stop via Ctrl+C)
+- Press Ctrl+C to pause; run same command to resume
 
-- **Fresh context per session**: Each session creates a new context window to prevent context pollution
-- **Progress persistence**: State preserved between sessions via:
-  - Tracking file (e.g., `feature_list.json`) tracking feature completion
-  - Session state file (`session.json`) tracking completed phases
-  - Git commits preserving code changes
-- **Auto-continue**: Sessions auto-resume after configured delay (default 3s)
-- **Completion detection**: Harness stops automatically when `tracker.is_complete()` returns `true` (only `json_checklist` supports this; `notes_file` and `none` trackers require manual stop via Ctrl+C)
-- Press `Ctrl+C` to pause; run same command to resume
-
-### Error Recovery & Circuit Breaker
+**Error recovery:**
 
 Prevents runaway API costs when sessions fail repeatedly:
 
@@ -203,6 +155,7 @@ auto_allow_bash_if_sandboxed = true
 allow_unsandboxed_commands = false  # secure default
 
 [security.sandbox.network]
+# Example allowed domains (configure for your project needs)
 allowed_domains = ["registry.npmjs.org", "github.com"]
 allow_local_binding = false
 allow_unix_sockets = []
@@ -321,7 +274,7 @@ See [`examples/claude-ai-clone/`](examples/claude-ai-clone/) for a complete exam
 
 ```bash
 # Run the Claude.ai clone example
-python -m agent_harness run \
+uv run python -m agent_harness run \
     --project-dir ./my-clone-output \
     --harness-dir examples/claude-ai-clone/.agent-harness
 ```
@@ -333,12 +286,12 @@ python -m agent_harness run \
 The harness expects a `.agent-harness/config.toml` file in your project directory. If you see this error:
 
 1. Check that you're running from the correct directory
-2. Use `python -m agent_harness init --project-dir ./my-project` to scaffold a new configuration
+2. Use `uv run python -m agent_harness init --project-dir ./my-project` to scaffold a new configuration
 3. If using `--harness-dir`, verify the path points to a directory containing `config.toml`
 
 ### "Prompt file not found"
 
-Check that all `file:` references in your config.toml point to files relative to the `.agent-harness/` directory. For example:
+Check that all `file:` references in your config.toml point to files relative to the `.agent-harness/` directory:
 
 ```toml
 [[phases]]
@@ -355,45 +308,25 @@ You need authentication credentials to use the Claude API:
 
 ### Agent is hanging on the first session
 
-The first session (initializer phase) can take 10-20+ minutes for complex projects because it:
-
-- Reads the entire spec
-- Plans the feature breakdown
-- Creates initial project structure
-- Sets up git repository
-- May run initial installs (npm, pip, etc.)
-
-This is expected behavior. Subsequent sessions (coding phase) are typically faster as they focus on individual features.
+The first session can take 10-20+ minutes for complex projects as it reads the spec, plans features, creates project structure, and sets up git. This is expected behavior. Subsequent sessions are typically faster.
 
 If a session truly hangs:
 
-1. Check the `.agent-harness/session.json` file for error messages
+1. Check `.agent-harness/session.json` for error messages
 2. Look for permission prompts or security blocks in the output
 3. Verify your progress file format matches the configuration (e.g., `feature_list.json` with `"passes": false` fields)
-
-## Design Principles
-
-1. **Zero assumptions about tech stack**: The harness has no hardcoded knowledge of npm, Ruby, Python, or any other stack. Projects declare exactly what they need.
-
-2. **Zero wasted context**: Only tools and servers declared in the config are available to the agent. No unused MCP servers polluting the context.
-
-3. **Defense in depth**: Multiple security layers (sandbox, permission rules, secure defaults) protect against unintended actions.
-
-4. **Session persistence**: Progress is saved between sessions via the progress file and git commits, enabling long-running tasks that span hours or days.
-
-5. **Fresh context per session**: Each session starts with a clean context window, preventing context pollution and allowing unlimited total work.
 
 ## Running Tests
 
 ```bash
 # Run all tests
-python -m unittest discover tests -v
+uv run python -m unittest discover tests -v
 
 # Run specific test modules
-python -m unittest tests.test_config -v         # Configuration loading
-python -m unittest tests.test_tracking -v       # Progress tracking
-python -m unittest tests.test_runner -v         # Session loop logic
-python -m unittest tests.test_client_factory -v # Client creation
+uv run python -m unittest tests.test_config -v         # Configuration loading
+uv run python -m unittest tests.test_tracking -v       # Progress tracking
+uv run python -m unittest tests.test_runner -v         # Session loop logic
+uv run python -m unittest tests.test_client_factory -v # Client creation
 ```
 
 Test coverage includes:
@@ -406,5 +339,3 @@ Test coverage includes:
 ## License
 
 MIT License. See [LICENSE](LICENSE).
-
-This harness is based on the patterns described in Anthropic's [guide for long-running agent harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents). The project originated from the [autonomous-coding example](https://github.com/anthropics/claude-quickstarts/tree/main/autonomous-coding) in the claude-quickstarts repository and is built using the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk).

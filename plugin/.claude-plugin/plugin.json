@@ -1,0 +1,9 @@
+{
+  "name": "agent-harness",
+  "description": "Claude Code access to agent-harness CLI",
+  "author": {
+    "name": "Christopher Plain"
+  },
+  "homepage": "https://github.com/cpplain/claude-agent-harness",
+  "repository": "https://github.com/cpplain/claude-agent-harness"
+}

@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
@@ -27,9 +28,31 @@ else:
 
 
 CONFIG_DIR_NAME = ".agent-harness"
-DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+DEFAULT_MODEL = "claude-sonnet-4-5"
 DEFAULT_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
+AVAILABLE_MODELS = [
+    "claude-opus-4-5",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+]
 _KNOWN_TOP_LEVEL_KEYS = {"model", "system_prompt", "max_turns", "max_iterations", "auto_continue_delay", "tools", "security", "tracking", "error_recovery", "phases", "post_run_instructions"}
+
+
+class PermissionMode(str, Enum):
+    """Valid permission modes for tool call approval."""
+
+    DEFAULT = "default"
+    ACCEPT_EDITS = "acceptEdits"
+    BYPASS_PERMISSIONS = "bypassPermissions"
+    PLAN = "plan"
+
+
+class TrackingType(str, Enum):
+    """Valid tracking types for progress monitoring."""
+
+    JSON_CHECKLIST = "json_checklist"
+    NOTES_FILE = "notes_file"
+    NONE = "none"
 
 
 @dataclass
@@ -64,7 +87,7 @@ class PermissionRulesConfig:
 class SecurityConfig:
     """Security configuration."""
 
-    permission_mode: str = "acceptEdits"
+    permission_mode: str = PermissionMode.ACCEPT_EDITS.value
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     permissions: PermissionRulesConfig = field(default_factory=PermissionRulesConfig)
 
@@ -92,7 +115,7 @@ class ToolsConfig:
 class TrackingConfig:
     """Progress tracking configuration."""
 
-    type: str = "none"
+    type: str = TrackingType.NONE.value
     file: str = ""
     passing_field: str = "passes"
 
@@ -186,7 +209,7 @@ def _validate_config(config: HarnessConfig) -> list[str]:
         errors.append("model must be a non-empty string")
 
     # Validate permission mode
-    valid_modes = {"default", "acceptEdits", "bypassPermissions", "plan"}
+    valid_modes = {m.value for m in PermissionMode}
     if config.security.permission_mode not in valid_modes:
         errors.append(
             f"security.permission_mode must be one of {valid_modes}, "
@@ -194,7 +217,7 @@ def _validate_config(config: HarnessConfig) -> list[str]:
         )
 
     # Validate tracking type
-    valid_tracking = {"json_checklist", "notes_file", "none"}
+    valid_tracking = {t.value for t in TrackingType}
     if config.tracking.type not in valid_tracking:
         errors.append(
             f"tracking.type must be one of {valid_tracking}, "
@@ -370,7 +393,7 @@ def load_config(
     )
 
     security = SecurityConfig(
-        permission_mode=raw_security.get("permission_mode", "acceptEdits"),
+        permission_mode=raw_security.get("permission_mode", PermissionMode.ACCEPT_EDITS.value),
         sandbox=sandbox,
         permissions=permissions,
     )
@@ -384,7 +407,7 @@ def load_config(
         tools=tools,
         security=security,
         tracking=TrackingConfig(
-            type=raw_tracking.get("type", "none"),
+            type=raw_tracking.get("type", TrackingType.NONE.value),
             file=raw_tracking.get("file", ""),
             passing_field=raw_tracking.get("passing_field", "passes"),
         ),

@@ -16,6 +16,12 @@ from importlib.metadata import version as get_version
 from pathlib import Path
 
 from agent_harness.config import CONFIG_DIR_NAME, ConfigError, load_config
+from agent_harness.info import (
+    cmd_info_guide,
+    cmd_info_preset,
+    cmd_info_schema,
+    cmd_info_template,
+)
 from agent_harness.runner import run_agent
 from agent_harness.verify import run_verify
 
@@ -67,6 +73,31 @@ def build_parser() -> argparse.ArgumentParser:
     # init subcommand
     init_parser = subparsers.add_parser("init", help="Scaffold .agent-harness/ with starter config")
     _add_common_args(init_parser)
+
+    # info subcommand
+    info_parser = subparsers.add_parser("info", help="Get templates, schema, and documentation")
+    info_subparsers = info_parser.add_subparsers(dest="info_command", help="Info topics")
+
+    # info template
+    template_parser = info_subparsers.add_parser("template", help="Get template files")
+    template_parser.add_argument("--name", help="Template name (e.g. config.toml)")
+    template_parser.add_argument("--list", action="store_true", help="List all templates")
+    template_parser.add_argument("--all", action="store_true", help="Get all templates with content")
+    template_parser.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # info schema
+    schema_parser = info_subparsers.add_parser("schema", help="Get configuration schema")
+    schema_parser.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # info preset
+    preset_parser = info_subparsers.add_parser("preset", help="Get preset configurations")
+    preset_parser.add_argument("--name", help="Preset name (e.g. python)")
+    preset_parser.add_argument("--list", action="store_true", help="List all presets")
+    preset_parser.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # info guide
+    guide_parser = info_subparsers.add_parser("guide", help="Get setup guide")
+    guide_parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     return parser
 
@@ -157,6 +188,32 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(f"  4. Run: agent-harness run --project-dir {project_dir}")
 
 
+def cmd_info(args: argparse.Namespace) -> None:
+    """Execute the info subcommand."""
+    if not args.info_command:
+        print("Error: info subcommand required")
+        print("Usage: agent-harness info {template|schema|preset|guide} [options]")
+        sys.exit(1)
+
+    if args.info_command == "template":
+        cmd_info_template(
+            name=getattr(args, "name", None),
+            list_templates_flag=getattr(args, "list", False),
+            all_templates_flag=getattr(args, "all", False),
+            json_output=getattr(args, "json", False),
+        )
+    elif args.info_command == "schema":
+        cmd_info_schema(json_output=getattr(args, "json", False))
+    elif args.info_command == "preset":
+        cmd_info_preset(
+            name=getattr(args, "name", None),
+            list_presets_flag=getattr(args, "list", False),
+            json_output=getattr(args, "json", False),
+        )
+    elif args.info_command == "guide":
+        cmd_info_guide(json_output=getattr(args, "json", False))
+
+
 def main() -> None:
     """Main entry point."""
     parser = build_parser()
@@ -166,4 +223,4 @@ def main() -> None:
         parser.print_help()
         sys.exit(0)
 
-    {"run": cmd_run, "verify": cmd_verify, "init": cmd_init}[args.command](args)
+    {"run": cmd_run, "verify": cmd_verify, "init": cmd_init, "info": cmd_info}[args.command](args)

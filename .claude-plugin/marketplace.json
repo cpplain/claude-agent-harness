@@ -1,0 +1,12 @@
+{
+  "name": "agent-harness-plugin",
+  "owner": {
+    "name": "Christopher Plain"
+  },
+  "plugins": [
+    {
+      "name": "agent-harness",
+      "source": "./plugin"
+    }
+  ]
+}

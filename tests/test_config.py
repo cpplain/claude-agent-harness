@@ -16,6 +16,7 @@ from unittest.mock import patch
 from agent_harness.config import (
     ConfigError,
     DEFAULT_BUILTIN_TOOLS,
+    DEFAULT_MODEL,
     HarnessConfig,
     load_config,
 )
@@ -26,7 +27,7 @@ class TestConfigDefaults(unittest.TestCase):
 
     def test_default_model(self) -> None:
         config = HarnessConfig()
-        self.assertEqual(config.model, "claude-sonnet-4-5-20250929")
+        self.assertEqual(config.model, DEFAULT_MODEL)
 
     def test_default_max_turns(self) -> None:
         config = HarnessConfig()
@@ -72,7 +73,7 @@ class TestLoadConfig(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             project_dir = self._write_config(tmpdir, "")
             config = load_config(project_dir)
-            self.assertEqual(config.model, "claude-sonnet-4-5-20250929")
+            self.assertEqual(config.model, DEFAULT_MODEL)
             self.assertEqual(config.max_turns, 1000)
 
     def test_custom_model(self) -> None:

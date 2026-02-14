@@ -22,6 +22,8 @@ Agent Harness provides:
 
 ## Getting Started
 
+**→ For a detailed step-by-step guide, see [docs/setup-guide.md](docs/setup-guide.md)**
+
 ### 1. Install
 
 ```bash
@@ -79,11 +81,56 @@ agent-harness init --project-dir <path>     # Scaffold new config
 agent-harness verify --project-dir <path>   # Check setup
 agent-harness run --project-dir <path>      # Run the agent
 
+# Info commands (for skill/automation integration)
+agent-harness info template [--name NAME] [--list] [--all] [--json]
+agent-harness info schema [--json]
+agent-harness info preset [--name NAME] [--list] [--json]
+agent-harness info guide [--json]
+
 # Options
 --project-dir PATH      # Agent's working directory (default: .)
 --max-iterations N      # Override max iterations (run only)
 --model MODEL           # Override model (run only)
+--version              # Show version
 ```
+
+### Info Commands
+
+The `info` subcommand provides programmatic access to templates, configuration schema, presets, and documentation. These commands are designed for integration with Claude Code skills and other automation tools:
+
+- **`info template`** — Get template file contents (config.toml, spec.md, init.md, build.md)
+  - Use `--all` to fetch all templates with content in one command
+- **`info schema`** — Get JSON schema describing all configuration options
+- **`info preset`** — Get preset configurations for common use cases (python, web-nodejs, read-only)
+- **`info guide`** — Get the complete setup guide as structured JSON or markdown
+
+All commands support `--json` flag for machine-readable output.
+
+### Claude Code Skill
+
+A Claude Code skill is available via the plugin system:
+
+```bash
+# Step 1: Add the marketplace
+/plugin marketplace add <github-url-or-local-clone>
+
+# Step 2: Install the plugin
+/plugin install agent-harness@agent-harness-plugin
+```
+
+Once installed, invoke the skill in Claude Code:
+
+```bash
+/agent-harness                                  # Interactive mode selection
+/agent-harness help me setup using ./spec.md    # Custom instruction
+```
+
+The skill provides:
+
+- Interactive interviews for project setup
+- Preset recommendations based on tech stack
+- Security-first configuration with clear trade-offs
+- Automated fixes for common configuration issues
 
 ## How It Works
 

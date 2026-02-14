@@ -8,9 +8,6 @@ description: >-
 argument-hint: "[instruction]"
 disable-model-invocation: true
 allowed-tools: "Read, Glob, Grep, Write, Edit, Bash(agent-harness *)"
-metadata:
-  author: cpplain
-  version: 1.0.0
 ---
 
 # Agent Harness Setup Assistant

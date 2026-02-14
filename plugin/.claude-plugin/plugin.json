@@ -1,5 +1,6 @@
 {
   "name": "agent-harness",
+  "version": "0.1.0",
   "description": "Claude Code access to agent-harness CLI",
   "author": {
     "name": "Christopher Plain"
